@@ -28,9 +28,10 @@ int main(int argc, char **argv) {
     const char *service = argv[1];
     const char *user = argv[2];
 
-    struct pam_conv conv = { conv, NULL };
+    /* Named `conversation` because the struct's first member is `conv`. */
+    struct pam_conv conversation = { conv, NULL };
     pam_handle_t *pamh = NULL;
-    int start_rc = pam_start(service, user, &conv, &pamh);
+    int start_rc = pam_start(service, user, &conversation, &pamh);
     if (start_rc != PAM_SUCCESS) {
         printf("auth:%d acct:-1\n", start_rc);
         return start_rc;
