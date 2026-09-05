@@ -8,7 +8,10 @@
 #include <security/pam_appl.h>
 #include <stdio.h>
 
-static int conv(pam_message_t *message, const char **response, void *appdata) {
+/* Linux-PAM has no pam_message_t typedef: the conv callback takes struct
+ * pointers. We never prompt; any prompt is a protocol failure. */
+static int conv(const struct pam_message **message, struct pam_response **response,
+                void *appdata) {
     (void)message;
     (void)response;
     (void)appdata;
