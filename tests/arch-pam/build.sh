@@ -39,6 +39,8 @@ wait_for_socket() {
 }
 # scenario <name> <expected-output> <service> -- start the agent with the
 # given lease, run the PAM client for <service>, and compare the codes.
+# The conversation supplies $CLIENT_PASSWORD to the module's echo-off prompt
+# (harness env; the module itself never reads the environment).
 scenario() {
   local name="$1" expected="$2" service="$3"; shift 3
   local agent_pid="" output
@@ -48,7 +50,7 @@ scenario() {
     --min-revocation-epoch 1 "$@" >"/out/agent-$name.log" 2>&1 &
   agent_pid=$!
   if wait_for_socket; then
-    output=$(/out/pam-test-client "$service" root)
+    output=$(OMA_TEST_PASSWORD="${CLIENT_PASSWORD:-}" /out/pam-test-client "$service" root)
   else
     output="agent-did-not-bind"
   fi
@@ -68,15 +70,30 @@ scenario() {
   fi
 }
 
-# Valid lease, mapped service: auth and account stages both pass.
+# The agent's expected credential and what the conversation will supply.
+AGENT_PASSWORD="p1nned-credential"
+
+# Valid lease, mapped service, correct credential: auth and account stages
+# both pass.
+CLIENT_PASSWORD="$AGENT_PASSWORD"
 scenario valid "auth:0 acct:0" sddm \
-  --not-before $((now - 60)) --expires-at $((now + 3600)) --revocation-epoch 1
-# Expired lease: explicit denial from the agent (PAM_AUTH_ERR = 7).
+  --not-before $((now - 60)) --expires-at $((now + 3600)) --revocation-epoch 1 \
+  --password "$AGENT_PASSWORD"
+# Wrong credential from the conversation: explicit denial (PAM_AUTH_ERR = 7)
+# before the lease is even consulted.
+CLIENT_PASSWORD="not-the-credential"
+scenario wrong "auth:7 acct:-1" sddm \
+  --not-before $((now - 60)) --expires-at $((now + 3600)) --revocation-epoch 1 \
+  --password "$AGENT_PASSWORD"
+# Expired lease with the CORRECT credential (plan §9.1): the credential
+# exchange still passes, the authorization request denies → PAM_AUTH_ERR = 7.
+CLIENT_PASSWORD="$AGENT_PASSWORD"
 scenario expired "auth:7 acct:-1" sddm \
-  --not-before $((now - 7200)) --expires-at $((now - 3600)) --revocation-epoch 1
+  --not-before $((now - 7200)) --expires-at $((now - 3600)) --revocation-epoch 1 \
+  --password "$AGENT_PASSWORD"
 # Mapped service but no agent at all: unavailable (PAM_SYSTEM_ERR = 4).
 rm -f "$SOCKET"
-output=$(/out/pam-test-client sddm root)
+output=$(OMA_TEST_PASSWORD="$AGENT_PASSWORD" /out/pam-test-client sddm root)
 {
   echo "expected: auth:4 acct:-1"
   echo "actual:   $output"
@@ -88,8 +105,11 @@ else
   printf 'scenario-down\t1\n' >> /out/results.tsv
   echo "scenario-down: MISMATCH (see /out/scenario-down.log)"
 fi
-# Unmapped PAM service: the module fails closed (PAM_SYSTEM_ERR = 4).
+# Unmapped PAM service: the module fails closed (PAM_SYSTEM_ERR = 4)
+# before ever prompting or contacting the agent.
+CLIENT_PASSWORD="$AGENT_PASSWORD"
 scenario unmapped "auth:4 acct:-1" oma-unmapped \
-  --not-before $((now - 60)) --expires-at $((now + 3600)) --revocation-epoch 1
+  --not-before $((now - 60)) --expires-at $((now + 3600)) --revocation-epoch 1 \
+  --password "$AGENT_PASSWORD"
 
 if awk '$2 != 0 { failed=1 } END {exit !failed}' /out/results.tsv; then exit 1; fi

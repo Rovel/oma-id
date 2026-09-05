@@ -2,9 +2,10 @@
 //!
 //! Per ADR-0004 this module contains no policy engine, credential database,
 //! HTTP client or remotely supplied scripting: it reads the PAM service and
-//! user from the handle, asks the local agent over the root-owned Unix
-//! socket, and translates the fail-closed [`oma_id_pam_client::Outcome`] into
-//! a PAM return code.
+//! user from the handle, asks the conversation for the password (echo off),
+//! forwards it to the local agent over the root-owned Unix socket, and
+//! translates the fail-closed [`oma_id_pam_client::Outcome`] into a PAM
+//! return code.
 //!
 //! Security decisions encoded here:
 //!
@@ -16,6 +17,11 @@
 //!   stage-specific error; any unavailable outcome maps to
 //!   `PAM_SYSTEM_ERR` so "agent dead" is auditable and distinct from "agent
 //!   said no".
+//! - The auth stage requires **both** decisions: the credential must verify
+//!   AND the lease must authorize ([`authenticate_outcomes`]). A verified
+//!   credential never extends or overrides a lease, and a lease denial is
+//!   never rescued by one (plan §9.1). The password itself is forwarded to
+//!   the agent and never stored, logged, or echoed.
 //! - An unknown PAM service fails closed. The module must only be listed in
 //!   OMA-managed PAM stacks; transparency for foreign services is a
 //!   lockout-bypass vector, not a convenience.
@@ -36,10 +42,14 @@ pub const PAM_SYSTEM_ERR: c_int = 4;
 pub const PAM_BUF_ERR: c_int = 5;
 pub const PAM_PERM_DENIED: c_int = 6;
 pub const PAM_AUTH_ERR: c_int = 7;
+pub const PAM_CONV_ERR: c_int = 16;
 
 // PAM item types (libpam/pam_items.h).
 const PAM_SERVICE: c_int = 1;
 const PAM_USER: c_int = 2;
+
+// `pam_prompt` echo mode (libpam/pam_misc/pam_prompt.h).
+const PAM_PROMPT_ECHO_OFF: c_int = 1;
 
 /// Fixed agent socket. See the crate docs: no environment override.
 pub const AGENT_SOCKET_PATH: &str = "/run/oma-id/agent.sock";
@@ -85,8 +95,22 @@ unsafe fn authorize_stage(
     _argv: *const *const c_char,
     _retdata: *mut c_void,
 ) -> c_int {
+    // SAFETY: RTLD_NOW dlopen fails fast on a broken libpam; one handle is
+    // shared by both resolved symbols and closed exactly once below.
+    let lib = match dlopen_libpam() {
+        Some(lib) => lib,
+        None => return PAM_SYSTEM_ERR,
+    };
+    let result = unsafe { run_stage(handle, stage, lib) };
+    // SAFETY: `lib` is the live handle from above and no resolved symbols
+    // are in use once the stage has finished.
+    let _ = unsafe { libc::dlclose(lib) };
+    result
+}
+
+unsafe fn run_stage(handle: PamHandle, stage: Stage, lib: *mut c_void) -> c_int {
     // SAFETY: `handle` is the live PAM handle for this invocation.
-    let items = match unsafe { read_items(handle) } {
+    let items = match unsafe { read_items(lib, handle) } {
         Ok(items) => items,
         Err(code) => return code,
     };
@@ -97,7 +121,38 @@ unsafe fn authorize_stage(
     };
     // The username comes from the PAM context, never from the wire.
     let client = Client::new(AGENT_SOCKET_PATH, DEFAULT_TIMEOUT);
-    outcome_to_pam_code(stage, client.authorize(consumer, operation, &user))
+    match stage {
+        Stage::Account => {
+            // Account checks require an explicit agent decision but never
+            // prompt: the password belongs to the auth stage.
+            outcome_to_pam_code(
+                Stage::Account,
+                client.authorize(consumer, operation, &user),
+            )
+        }
+        Stage::Auth => {
+            let password = match unsafe { prompt_password(lib, handle) } {
+                Ok(password) => password,
+                Err(code) => return code,
+            };
+            // Plan §9.1: both decisions are required. The credential answer
+            // is reported first and never masked by the other.
+            let credential = client.exchange_credential(consumer, operation, &user, &password);
+            let authorization = client.authorize(consumer, operation, &user);
+            authenticate_outcomes(credential, authorization)
+        }
+    }
+}
+
+/// Auth-stage decision rule: the forwarded credential must verify AND the
+/// lease must authorize. Failures are reported in that order, so a dead
+/// agent at the credential step is never masked by an authorization answer,
+/// and a verified credential never rescues a lease denial.
+pub fn authenticate_outcomes(credential: Outcome, authorization: Outcome) -> c_int {
+    if !matches!(credential, Outcome::Authorized) {
+        return outcome_to_pam_code(Stage::Auth, credential);
+    }
+    outcome_to_pam_code(Stage::Auth, authorization)
 }
 
 /// Map a PAM service name to the consumer/operation pair it represents.
@@ -132,15 +187,12 @@ struct PamItems {
 }
 
 /// Read `PAM_SERVICE` and `PAM_USER` from the handle via a runtime-resolved
-/// `pam_get_item`.
-unsafe fn read_items(handle: PamHandle) -> Result<PamItems, c_int> {
-    let lib = dlopen_libpam().ok_or(PAM_SYSTEM_ERR)?;
+/// `pam_get_item`. The caller owns `lib` (and its close).
+unsafe fn read_items(lib: *mut c_void, handle: PamHandle) -> Result<PamItems, c_int> {
     type PamGetItem = unsafe extern "C" fn(*mut c_void, c_int, *mut *const c_void) -> c_int;
     // SAFETY: `lib` is a live dlopen handle; the symbol name is NUL-terminated.
     let sym = unsafe { libc::dlsym(lib, b"pam_get_item\0".as_ptr().cast::<c_char>()) };
     if sym.is_null() {
-        // SAFETY: `lib` is a live handle from dlopen.
-        unsafe { libc::dlclose(lib) };
         return Err(PAM_SYSTEM_ERR);
     }
     // SAFETY: `pam_get_item` has a stable C ABI; transmuting a non-null
@@ -150,9 +202,46 @@ unsafe fn read_items(handle: PamHandle) -> Result<PamItems, c_int> {
     // item pointers are valid for this module invocation.
     let service = unsafe { item_string(get_item, handle, PAM_SERVICE) }?;
     let user = unsafe { item_string(get_item, handle, PAM_USER) }?;
-    // SAFETY: `lib` is a live handle from dlopen.
-    unsafe { libc::dlclose(lib) };
     Ok(PamItems { service, user })
+}
+
+/// Ask the conversation for the user's password with echo off, via a
+/// runtime-resolved `pam_prompt`. The response string is copied out and
+/// freed — libpam leaves ownership with us. Any non-success from libpam is
+/// returned as-is so a user abort stays an abort.
+unsafe fn prompt_password(lib: *mut c_void, handle: PamHandle) -> Result<String, c_int> {
+    type PamPrompt = unsafe extern "C" fn(*mut c_void, c_int, *const c_char, *mut c_void) -> c_int;
+    // SAFETY: `lib` is a live dlopen handle; the symbol name is NUL-terminated.
+    let sym = unsafe { libc::dlsym(lib, b"pam_prompt\0".as_ptr().cast::<c_char>()) };
+    if sym.is_null() {
+        return Err(PAM_SYSTEM_ERR);
+    }
+    // SAFETY: `pam_prompt` has a stable C ABI; transmuting a non-null dlsym
+    // result into that function-pointer type preserves provenance.
+    let prompt = unsafe { std::mem::transmute::<*mut c_void, PamPrompt>(sym) };
+    let mut response: *mut c_char = ptr::null_mut();
+    // SAFETY: `handle` is the live PAM handle; `&mut response` is passed as
+    // the `char **` auxiliary argument that `pam_prompt` fills in.
+    let rc = unsafe {
+        prompt(
+            handle,
+            PAM_PROMPT_ECHO_OFF,
+            b"Password:\0".as_ptr().cast::<c_char>(),
+            &mut response as *mut *mut c_char as *mut c_void,
+        )
+    };
+    if rc != PAM_SUCCESS {
+        return Err(rc);
+    }
+    if response.is_null() {
+        return Err(PAM_CONV_ERR);
+    }
+    // SAFETY: libpam guarantees a NUL-terminated response for prompt items.
+    let bytes = unsafe { CStr::from_ptr(response) }.to_bytes().to_vec();
+    // SAFETY: `response` is heap-allocated by the conversation and owned by
+    // us from this point on.
+    unsafe { libc::free(response as *mut c_void) };
+    String::from_utf8(bytes).map_err(|_| PAM_BUF_ERR)
 }
 
 unsafe fn item_string(
@@ -225,6 +314,39 @@ mod tests {
                 assert_ne!(outcome_to_pam_code(stage, outcome), PAM_SUCCESS);
             }
         }
+    }
+
+    #[test]
+    fn auth_stage_requires_both_decisions_in_order() {
+        // Both pass.
+        assert_eq!(
+            authenticate_outcomes(Outcome::Authorized, Outcome::Authorized),
+            PAM_SUCCESS
+        );
+        // A credential failure is reported first...
+        assert_eq!(
+            authenticate_outcomes(Outcome::Denied, Outcome::Authorized),
+            PAM_AUTH_ERR
+        );
+        assert_eq!(
+            authenticate_outcomes(
+                Outcome::Unavailable(UnavailableReason::ConnectFailed),
+                Outcome::Authorized
+            ),
+            PAM_SYSTEM_ERR
+        );
+        // ...and a verified credential never rescues a lease denial.
+        assert_eq!(
+            authenticate_outcomes(Outcome::Authorized, Outcome::Denied),
+            PAM_AUTH_ERR
+        );
+        assert_eq!(
+            authenticate_outcomes(
+                Outcome::Authorized,
+                Outcome::Unavailable(UnavailableReason::TimedOut)
+            ),
+            PAM_SYSTEM_ERR
+        );
     }
 
     #[test]

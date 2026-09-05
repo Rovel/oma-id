@@ -1,23 +1,39 @@
 /* P0 test harness: drive a real libpam stack that lists pam_oma_id.so.
  *
- * Usage: pam-test-client <service> <username>
+ * Usage: OMA_TEST_PASSWORD=<credential> pam-test-client <service> <username>
  * Prints "auth:<code> acct:<code>" where codes are libpam error numbers.
- * The conv function never prompts: the module under test must decide
- * without asking for a password, and any prompt is a protocol failure.
+ *
+ * The conv function answers the auth stage's echo-off password prompt with
+ * $OMA_TEST_PASSWORD. That variable is harness input only: the module under
+ * test never reads the environment. If the variable is unset, or for any
+ * other message type, the conversation fails so the scenario fails closed.
  */
 #include <security/pam_appl.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+static const char *g_password = NULL;
 
 /* Linux-PAM has no pam_message_t typedef: the conv callback takes a
- * message count plus struct pointers. We never prompt; any prompt is a
- * protocol failure. */
+ * message count plus struct pointers. */
 static int conv(int num_msg, const struct pam_message **msg,
                 struct pam_response **resp, void *appdata_ptr) {
-    (void)num_msg;
-    (void)msg;
-    (void)resp;
     (void)appdata_ptr;
-    return PAM_CONV_ERR;
+    if (num_msg != 1 || msg == NULL || resp == NULL || g_password == NULL) {
+        return PAM_CONV_ERR;
+    }
+    /* Answer only echo-off password prompts. */
+    if (msg[0].length != PAM_PROMPT_ECHO_OFF) {
+        return PAM_CONV_ERR;
+    }
+    char *copy = strdup(g_password);
+    if (copy == NULL) {
+        return PAM_BUF_ERR;
+    }
+    resp->resp = copy;
+    resp->resp_len = strlen(copy);
+    return PAM_SUCCESS;
 }
 
 int main(int argc, char **argv) {
@@ -27,6 +43,8 @@ int main(int argc, char **argv) {
     }
     const char *service = argv[1];
     const char *user = argv[2];
+
+    g_password = getenv("OMA_TEST_PASSWORD");
 
     /* Named `conversation` because the struct's first member is `conv`. */
     struct pam_conv conversation = { conv, NULL };
