@@ -18,7 +18,9 @@
 
 #![cfg(target_os = "linux")]
 
-use oma_id_agent_ipc::{exchange, Consumer, Operation, ProtocolError, PROTOCOL_VERSION};
+use oma_id_agent_ipc::{exchange, ProtocolError, PROTOCOL_VERSION};
+
+pub use oma_id_agent_ipc::{Consumer, Operation};
 use std::path::PathBuf;
 use std::time::Duration;
 

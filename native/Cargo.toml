@@ -5,6 +5,7 @@ members = [
     "crates/oma-id-agent-daemon",
     "crates/oma-id-agent-ipc",
     "crates/oma-id-pam-client",
+    "crates/oma-id-pam-module",
 ]
 
 [workspace.package]

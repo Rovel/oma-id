@@ -1,0 +1,15 @@
+[package]
+name = "oma-id-pam-module"
+version = "0.0.1"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+libc.workspace = true
+oma-id-pam-client = { path = "../oma-id-pam-client" }
+
+[lib]
+name = "pam_oma_id"
+crate-type = ["cdylib", "rlib"]
+path = "src/lib.rs"

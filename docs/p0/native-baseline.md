@@ -73,9 +73,9 @@ clock rollback relative to the last authenticated server time. Signature parsing
 and verification deliberately remain outside the core until a reviewed format
 and library are pinned.
 
-`mise run p0:agent-core` passes 31 tests (4 core, 7 IPC, 2 daemon unit,
-9 socket integration, 3 PAM-client unit, 6 PAM-client integration) on
-Rust 1.88.0. The workspace has no third-party crates
+`mise run p0:agent-core` passes 35 tests (4 core, 7 IPC, 2 daemon unit,
+9 socket integration, 3 PAM-client unit, 6 PAM-client integration, 4
+PAM-module unit) on Rust 1.88.0. The workspace has no third-party crates
 beyond pinned `libc`, `serde` and `serde_json`; `Cargo.lock` is committed as
 reproducible input. Passing these tests establishes only decision semantics,
 framing, peer policy and service mapping — not login enforcement.
@@ -123,10 +123,29 @@ cases.
 This is the Rust client core only: no libpam glue, no credential-exchange
 message type, no PAM stage wiring yet.
 
+### PAM module core (oma-id-pam-module)
+
+`pam_oma_id` front end over the client core: `pam_sm_auth` and
+`pam_sm_acct_mgmt` entry points read `PAM_SERVICE`/`PAM_USER` from the
+handle via runtime-resolved `pam_get_item` (dlopen — no hard libpam link,
+so it builds on any Linux host), map the service to a consumer/operation
+pair, and translate the fail-closed outcome: only `Authorized` →
+`PAM_SUCCESS`; denial → `PAM_AUTH_ERR` (auth) / `PAM_PERM_DENIED`
+(account); unavailable → `PAM_SYSTEM_ERR`. The agent socket path is a
+compile-time constant (`/run/oma-id/agent.sock`) with deliberately no
+environment override, because the PAM environment is caller-influenced and
+an overridable path would let a local attacker point the module at an
+always-allowing agent. Unknown PAM services fail closed.
+
+Host-side evidence only: unit tests cover service mapping, outcome
+codes, and the fixed socket path. No container build, no real libpam load,
+no PAM consumer run yet.
+
 ### Next native slice
 
-Build `pam_oma_id` (libpam FFI over this client) in a disposable Arch
-container/WSL distro and exercise the real consumer path — SDDM or Quickshell
-PAM service — against the agent, recording exact failures. Then the
-credential-exchange message type once the authorization path is proven in a
-real consumer. No login gate is claimed by any of the above.
+Build this module in a disposable Arch container (pinned image, existing
+`tests/arch/` pattern) and exercise the real consumer path — SDDM or
+Quickshell PAM service via libpam — against the fake agent, recording exact
+failures. Then the credential-exchange message type once the authorization
+path is proven in a real consumer. No login gate is claimed by any of the
+above.
