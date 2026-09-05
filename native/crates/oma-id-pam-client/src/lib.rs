@@ -13,12 +13,19 @@
 //! falls back to anything else.
 //!
 //! `local_username` must come from the PAM context (the account the consumer
-//! is authenticating), never from user input on the wire. The actual libpam
-//! glue and credential-exchange message type are later slices.
+//! is authenticating), never from user input on the wire.
+//!
+//! Two exchanges exist, mirroring the plan's separation of authentication
+//! from authorization: [`Client::exchange_credential`] forwards bounded
+//! credential material for verification; [`Client::authorize`] asks whether
+//! the verified lease permits the consumer/operation pair. A credential pass
+//! never extends or overrides a lease.
+//!
+//! The actual libpam prompting glue is a later slice.
 
 #![cfg(target_os = "linux")]
 
-use oma_id_agent_ipc::{exchange, ProtocolError, PROTOCOL_VERSION};
+use oma_id_agent_ipc::{exchange_authorization, exchange_credential, ProtocolError, PROTOCOL_VERSION};
 
 pub use oma_id_agent_ipc::{Consumer, Operation};
 use std::path::PathBuf;
@@ -88,7 +95,40 @@ impl Client {
             consumer,
             operation,
         };
-        match exchange(&self.socket_path, &request, self.timeout) {
+        match exchange_authorization(&self.socket_path, &request, self.timeout) {
+            Ok(response) => match response.decision {
+                oma_id_agent_ipc::Decision::Allow => Outcome::Authorized,
+                oma_id_agent_ipc::Decision::Deny(_) => Outcome::Denied,
+            },
+            Err(error) => Outcome::Unavailable(map_error(&error)),
+        }
+    }
+
+    /// Forward bounded credential material to the agent for verification.
+    /// This is forwarding only: the client does not compare, store, or log
+    /// the credential, and only an explicit allow maps to
+    /// [`Outcome::Authorized`]. A pass here never extends or overrides a
+    /// lease; that is the job of [`Client::authorize`].
+    pub fn exchange_credential(
+        &self,
+        consumer: Consumer,
+        operation: Operation,
+        local_username: &str,
+        password: &str,
+    ) -> Outcome {
+        let request_id = match random_request_id() {
+            Some(id) => id,
+            None => return Outcome::Unavailable(UnavailableReason::Internal),
+        };
+        let request = oma_id_agent_ipc::CredentialExchangeRequest {
+            version: PROTOCOL_VERSION,
+            request_id,
+            local_username: local_username.to_owned(),
+            consumer,
+            operation,
+            credential: oma_id_agent_ipc::Credential::Password(password.to_owned()),
+        };
+        match exchange_credential(&self.socket_path, &request, self.timeout) {
             Ok(response) => match response.decision {
                 oma_id_agent_ipc::Decision::Allow => Outcome::Authorized,
                 oma_id_agent_ipc::Decision::Deny(_) => Outcome::Denied,
@@ -117,7 +157,8 @@ fn map_error(error: &ProtocolError) -> UnavailableReason {
         | ProtocolError::MessageTooLarge(_)
         | ProtocolError::UnsupportedVersion(_)
         | ProtocolError::RequestIdMismatch
-        | ProtocolError::InvalidLocalUsername => UnavailableReason::ProtocolViolation,
+        | ProtocolError::InvalidLocalUsername
+        | ProtocolError::CredentialTooLarge(_) => UnavailableReason::ProtocolViolation,
     }
 }
 

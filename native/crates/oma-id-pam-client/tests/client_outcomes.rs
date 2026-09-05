@@ -4,7 +4,7 @@
 
 use oma_id_agent_core::{Operation as CoreOperation, VerifiedLease};
 use oma_id_agent_daemon::serve;
-use oma_id_agent_ipc::{read_message, write_message, AuthorizationRequest, PROTOCOL_VERSION};
+use oma_id_agent_ipc::{read_message, write_message, AgentRequest, PROTOCOL_VERSION};
 use oma_id_pam_client::{Client, Outcome, UnavailableReason, DEFAULT_TIMEOUT};
 use std::io::Write;
 use std::mem::MaybeUninit;
@@ -35,6 +35,13 @@ struct Harness {
 /// Valid lease for the current user; the accept loop lives until process
 /// exit and each harness uses a unique socket name.
 fn start_service(name: &str) -> Harness {
+    start_service_with_credential(name, None)
+}
+
+fn start_service_with_credential(
+    name: &str,
+    expected_credential: Option<&'static str>,
+) -> Harness {
     let path = socket_path(name);
     let _ = std::fs::remove_file(&path);
     let ops: &[CoreOperation] = &[CoreOperation::Unlock, CoreOperation::Login];
@@ -53,6 +60,7 @@ fn start_service(name: &str) -> Harness {
             lease,
             trusted_time_floor: now() - 60,
             minimum_revocation_epoch: 1,
+            expected_credential,
         };
         serve(&config).expect("service loop");
     });
@@ -186,13 +194,17 @@ fn lying_agent_protocol_violation_fails_closed() {
     let listener = UnixListener::bind(&path).expect("bind");
     std::thread::spawn(move || {
         if let Ok((mut stream, _)) = listener.accept() {
-            let request: AuthorizationRequest = match read_message(&mut stream) {
+            let request: AgentRequest = match read_message(&mut stream) {
                 Ok(request) => request,
                 Err(_) => return,
             };
-            let mut response = oma_id_agent_ipc::AuthorizationResponse {
+            let request_id = match &request {
+                AgentRequest::Authorization(inner) => inner.request_id,
+                AgentRequest::CredentialExchange(inner) => inner.request_id,
+            };
+            let mut response = oma_id_agent_ipc::AgentResponse {
                 version: PROTOCOL_VERSION,
-                request_id: request.request_id,
+                request_id,
                 decision: oma_id_agent_ipc::Decision::Allow,
             };
             response.request_id = [99; 16];
@@ -230,6 +242,65 @@ fn lying_agent_protocol_violation_fails_closed() {
             &current_username()
         ),
         Outcome::Unavailable(UnavailableReason::ProtocolViolation)
+    );
+}
+
+#[test]
+fn exchange_credential_authorized_when_agent_allows() {
+    let service = start_service_with_credential("cred-allow", Some("p1nned-credential"));
+    let client = Client::new(&service.path, DEFAULT_TIMEOUT);
+    assert_eq!(
+        client.exchange_credential(
+            oma_id_agent_ipc::Consumer::Quickshell,
+            oma_id_agent_ipc::Operation::Unlock,
+            &current_username(),
+            "p1nned-credential"
+        ),
+        Outcome::Authorized
+    );
+}
+
+#[test]
+fn exchange_credential_denied_is_denied_not_unavailable() {
+    let service = start_service_with_credential("cred-deny", Some("p1nned-credential"));
+    let client = Client::new(&service.path, DEFAULT_TIMEOUT);
+    // Wrong material is an explicit denial.
+    assert_eq!(
+        client.exchange_credential(
+            oma_id_agent_ipc::Consumer::Quickshell,
+            oma_id_agent_ipc::Operation::Unlock,
+            &current_username(),
+            "not-the-credential"
+        ),
+        Outcome::Denied
+    );
+    // No credential configured at all: same Denied, never Unavailable.
+    let unconfigured = start_service("cred-unconfigured");
+    let client = Client::new(&unconfigured.path, DEFAULT_TIMEOUT);
+    assert_eq!(
+        client.exchange_credential(
+            oma_id_agent_ipc::Consumer::Quickshell,
+            oma_id_agent_ipc::Operation::Unlock,
+            &current_username(),
+            "p1nned-credential"
+        ),
+        Outcome::Denied
+    );
+}
+
+#[test]
+fn exchange_credential_fails_closed_when_daemon_down() {
+    let path = socket_path("cred-down");
+    let _ = std::fs::remove_file(&path);
+    let client = Client::new(&path, DEFAULT_TIMEOUT);
+    assert_eq!(
+        client.exchange_credential(
+            oma_id_agent_ipc::Consumer::Quickshell,
+            oma_id_agent_ipc::Operation::Unlock,
+            &current_username(),
+            "p1nned-credential"
+        ),
+        Outcome::Unavailable(UnavailableReason::ConnectFailed)
     );
 }
 

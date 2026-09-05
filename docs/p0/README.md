@@ -49,15 +49,17 @@ remain to be reviewed before distributing anything.
   Raw mode preserves the original dependency gaps; no default tests are skipped.
 - Human authentication, enrollment, offline enforcement, and production deployment
   remain unverified.
-- `mise run p0:agent-core` passes 35 Rust tests: lease decision semantics
+- `mise run p0:agent-core` passes 45 Rust tests: lease decision semantics
   (valid use, person/device binding, validity boundaries, clock rollback,
-  revocation epoch, operation scope), IPC framing/peer policy, the fake
-  root-owned socket service (malformed frames, daemon-down, timeout, opaque
-  denial mapping), and the thin PAM client core (explicit pass/deny, daemon-
-down, timeout, lying-agent and unsafe-username fail-closed outcomes). Inputs
-  are already-verified values; parsing, signatures, credentials, libpam glue,
-  and account provisioning are not implemented yet. See
-  [native-baseline.md](native-baseline.md).
+  revocation epoch, operation scope), IPC framing/peer policy including the
+  tagged protocol-v2 credential-exchange request (bounded typed credential,
+  unknown tags rejected, oversized credentials rejected), the fake socket
+  service (malformed frames, daemon-down, timeout, opaque denial mapping,
+  credential verification independent of the lease), and the thin PAM client
+  core (explicit pass/deny, daemon-down, timeout, lying-agent and
+  unsafe-username fail-closed outcomes). Inputs are already-verified values;
+  parsing, signatures, libpam prompting glue, and account provisioning are
+  not implemented yet. See [native-baseline.md](native-baseline.md).
 
 ## Next smallest implementation
 

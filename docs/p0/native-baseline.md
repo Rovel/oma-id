@@ -120,8 +120,9 @@ expired, revoked, wrong-device or wrong-person lease. Integration tests run
 against the fake service, including lying-agent correlation and garbage-frame
 cases.
 
-This is the Rust client core only: no libpam glue, no credential-exchange
-message type, no PAM stage wiring yet.
+The same fail-closed contract now covers `Client::exchange_credential`
+(see the protocol-v2 section below). Still no libpam prompting glue or PAM
+stage wiring.
 
 ### PAM module core (oma-id-pam-module)
 
@@ -195,9 +196,42 @@ Still no production PAM module install, no daemon lifecycle, no real
 SDDM. This is a disposable-container protocol demonstration with a fake
 agent; no login gate is claimed.
 
+### Credential exchange on the wire (protocol v2)
+
+The credential-exchange message type, host suite only (no container run yet
+for this slice): `mise run p0:agent-core` → 45 tests / 0 failures.
+
+- IPC (`oma-id-agent-ipc`): `PROTOCOL_VERSION` 1→2. One request frame is now
+  a tagged union `AgentRequest` (`authorization` | `credential_exchange`),
+  so a daemon can never mistake one exchange for the other; untagged v1
+  frames fail to parse and the connection closes without a response. New
+  `CredentialExchangeRequest` carries a typed, bounded credential
+  (`Credential::Password`, ≤128 bytes, `MAX_CREDENTIAL_BYTES`); fingerprint/
+  biometric material never crosses this channel. Response renamed
+  `AgentResponse`; new `ProtocolError::CredentialTooLarge(usize)`.
+- Daemon: `ServiceConfig.expected_credential: Option<&str>` (the fake agent
+  takes it as optional `--password`; absent = every credential exchange
+  denied). `decide_credential` keeps the same peer policy and unknown-
+  account handling, compares in constant time, and never consults the lease —
+  plan 9.1: a verified credential establishes the person, not the permission.
+  Opaque denial preserved: wrong, empty, or unconfigured credential all map
+  to `Deny(NotAuthorized)`; only structural validation fails map to
+  `Deny(InvalidRequest)`.
+- PAM client: `Client::exchange_credential(consumer, operation,
+  local_username, password)` — forwarding only (no compare/store/log), same
+  fail-closed `Outcome` mapping as authorization.
+- New tests pin the separation: with an expired lease, the credential
+  exchange still passes while the authorization request on the same service
+  is denied. Also pinned: wrong/empty/unconfigured credentials are
+  indistinguishable denials; oversized credential → correlated
+  `InvalidRequest`; unknown tags and untagged v1 frames get no response.
+
+Still no production PAM module install, no daemon lifecycle, no real SDDM;
+no login gate is claimed by any of the above.
+
 ### Next native slice
 
-Credential-exchange message type in the IPC crate (the wire step that
-makes the P0 stand-in honest about where credentials come from), then the
-omarchy-iso integration branch per the recorded strategy. No login gate
-is claimed by any of the above.
+libpam prompting glue: `pam_sm_authenticate` asks the conversation for the
+password (`PAM_PROMPT_ECHO_OFF`), forwards it via `exchange_credential`, then
+calls `authorize`; both decisions required to succeed. Then the omarchy-iso
+integration branch per the recorded strategy.

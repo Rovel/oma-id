@@ -18,9 +18,9 @@
 
 use oma_id_agent_core::{self as core};
 use oma_id_agent_ipc::{
-    authorize_peer, peer_credentials, read_message, write_message, AuthorizationRequest,
-    AuthorizationResponse, Consumer as IpcConsumer, Decision, DenialCode, Operation as IpcOperation,
-    PeerCredentials, PROTOCOL_VERSION,
+    authorize_peer, peer_credentials, read_message, write_message, AgentRequest, AgentResponse,
+    AuthorizationRequest, Consumer as IpcConsumer, Credential, Decision, DenialCode,
+    Operation as IpcOperation, PeerCredentials, PROTOCOL_VERSION,
 };
 use std::io;
 use std::mem::MaybeUninit;
@@ -39,6 +39,12 @@ pub struct ServiceConfig<'a> {
     pub lease: core::VerifiedLease<'a>,
     pub trusted_time_floor: u64,
     pub minimum_revocation_epoch: u64,
+    /// P0 stand-in credential material for the bound subject, supplied by
+    /// the caller (the fake agent takes it on the command line). `None`
+    /// means no credential is configured and every credential exchange is
+    /// denied; a production agent resolves this from its own verified
+    /// credential store instead.
+    pub expected_credential: Option<&'a str>,
 }
 
 /// Bind the service socket and restrict it to the owning user. Production
@@ -81,21 +87,30 @@ pub fn handle_connection(stream: &mut UnixStream, config: &ServiceConfig) {
     {
         return;
     }
-    let request = match read_message::<AuthorizationRequest>(stream) {
+    let request = match read_message::<AgentRequest>(stream) {
         Ok(request) => request,
-        // Framing failures (size, EOF, malformed JSON) leave no correlation
-        // id to answer with; closing is the only fail-closed reply.
+        // Framing failures (size, EOF, malformed JSON, untagged v1 frames)
+        // leave no correlation id to answer with; closing is the only
+        // fail-closed reply.
         Err(_) => return,
     };
-    let response = AuthorizationResponse {
+    let (request_id, decision) = match &request {
+        AgentRequest::Authorization(request) => {
+            (request.request_id, decide_authorization(request, &peer, config))
+        }
+        AgentRequest::CredentialExchange(request) => {
+            (request.request_id, decide_credential(request, &peer, config))
+        }
+    };
+    let response = AgentResponse {
         version: PROTOCOL_VERSION,
-        request_id: request.request_id,
-        decision: decide(&request, &peer, config),
+        request_id,
+        decision,
     };
     let _ = write_message(stream, &response);
 }
 
-fn decide(
+fn decide_authorization(
     request: &AuthorizationRequest,
     peer: &PeerCredentials,
     config: &ServiceConfig,
@@ -149,6 +164,62 @@ fn authorize_lease(
             minimum_revocation_epoch: config.minimum_revocation_epoch,
         },
     )
+}
+
+/// Verify forwarded credential material. Per the plan, authentication is
+/// separate from authorization: this path never consults the lease, and a
+/// pass here never extends or overrides one. Peer policy still applies —
+/// the kernel identity of the caller is the only trusted input.
+fn decide_credential(
+    request: &oma_id_agent_ipc::CredentialExchangeRequest,
+    peer: &PeerCredentials,
+    config: &ServiceConfig,
+) -> Decision {
+    if request.validate().is_err() {
+        return Decision::Deny(DenialCode::InvalidRequest);
+    }
+    let local_user_uid = match local_user_uid(&request.local_username) {
+        Some(uid) => uid,
+        None => return Decision::Deny(DenialCode::NotAuthorized),
+    };
+    if authorize_peer(
+        *peer,
+        local_user_uid,
+        request.consumer,
+        request.operation,
+    )
+    .is_err()
+    {
+        return Decision::Deny(DenialCode::NotAuthorized);
+    }
+    // Opaque on purpose: "wrong credential", "no credential configured" and
+    // "unknown account" are indistinguishable from the client's side.
+    let expected = match config.expected_credential {
+        Some(expected) => expected,
+        None => return Decision::Deny(DenialCode::NotAuthorized),
+    };
+    let presented = match &request.credential {
+        Credential::Password(password) => password.as_bytes(),
+    };
+    if constant_time_eq(presented, expected.as_bytes()) {
+        Decision::Allow
+    } else {
+        Decision::Deny(DenialCode::NotAuthorized)
+    }
+}
+
+/// Constant-time byte comparison. The length check first is the standard
+/// trade-off (it reveals the expected length, not its content); the caller
+/// is a local same-user process, not a remote adversary.
+fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
+    if left.len() != right.len() {
+        return false;
+    }
+    let mut difference = 0_u8;
+    for (a, b) in left.iter().zip(right) {
+        difference |= a ^ b;
+    }
+    difference == 0
 }
 
 fn to_core_consumer(consumer: IpcConsumer) -> core::Consumer {
@@ -210,6 +281,14 @@ fn local_user_uid(name: &str) -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn constant_time_eq_matches_only_equal_bytes() {
+        assert!(constant_time_eq(b"s3cret", b"s3cret"));
+        assert!(!constant_time_eq(b"s3cret", b"s3creT"));
+        assert!(!constant_time_eq(b"s3cret", b"s3crets"));
+        assert!(constant_time_eq(b"", b""));
+    }
 
     #[test]
     fn resolves_known_and_unknown_local_accounts() {

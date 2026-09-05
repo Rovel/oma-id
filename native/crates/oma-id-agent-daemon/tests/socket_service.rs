@@ -8,8 +8,9 @@
 use oma_id_agent_core::{Operation as CoreOperation, VerifiedLease};
 use oma_id_agent_daemon::{bind, handle_connection, serve, ServiceConfig};
 use oma_id_agent_ipc::{
-    read_message, write_message, AuthorizationRequest, AuthorizationResponse, Consumer, Decision,
-    DenialCode, Operation, PROTOCOL_VERSION, MAX_MESSAGE_BYTES,
+    read_message, write_message, AgentRequest, AgentResponse, AuthorizationRequest, Consumer,
+    Credential, CredentialExchangeRequest, Decision, DenialCode, Operation, PROTOCOL_VERSION,
+    MAX_CREDENTIAL_BYTES, MAX_MESSAGE_BYTES,
 };
 use std::io::{self, Write};
 use std::mem::MaybeUninit;
@@ -91,6 +92,14 @@ struct Harness {
 }
 
 fn start_service(name: &str, bounds: Bounds) -> Harness {
+    start_service_with_credential(name, bounds, None)
+}
+
+fn start_service_with_credential(
+    name: &str,
+    bounds: Bounds,
+    expected_credential: Option<&'static str>,
+) -> Harness {
     let path = socket_path(name);
     let _ = std::fs::remove_file(&path);
     let ops: &[CoreOperation] = &[CoreOperation::Unlock];
@@ -113,6 +122,7 @@ fn start_service(name: &str, bounds: Bounds) -> Harness {
             lease,
             trusted_time_floor,
             minimum_revocation_epoch,
+            expected_credential,
         };
         serve(&config).expect("service loop");
     });
@@ -176,10 +186,25 @@ fn request(consumer: Consumer, operation: Operation) -> AuthorizationRequest {
     }
 }
 
+fn credential_request(
+    consumer: Consumer,
+    operation: Operation,
+    password: &str,
+) -> CredentialExchangeRequest {
+    CredentialExchangeRequest {
+        version: PROTOCOL_VERSION,
+        request_id: [11; 16],
+        local_username: current_username(),
+        consumer,
+        operation,
+        credential: Credential::Password(password.to_owned()),
+    }
+}
+
 #[test]
 fn allows_same_user_quickshell_unlock() {
     let service = start_service("allow", Bounds::valid_around(now()));
-    let response = oma_id_agent_ipc::exchange(
+    let response = oma_id_agent_ipc::exchange_authorization(
         &service.path,
         &request(Consumer::Quickshell, Operation::Unlock),
         Duration::from_secs(2),
@@ -196,7 +221,7 @@ fn denies_unprivileged_consumer_for_non_root_peer() {
         // still denied because the harness lease only scopes Unlock —
         // defense in depth, and the opaque code shows the client cannot
         // tell which layer fired.
-        let response = oma_id_agent_ipc::exchange(
+        let response = oma_id_agent_ipc::exchange_authorization(
             &service.path,
             &request(Consumer::Sddm, Operation::Login),
             Duration::from_secs(2),
@@ -205,7 +230,7 @@ fn denies_unprivileged_consumer_for_non_root_peer() {
         assert_eq!(response.decision, Decision::Deny(DenialCode::NotAuthorized));
     } else {
         // Sddm/Login is a valid root pair, but this peer is not root.
-        let response = oma_id_agent_ipc::exchange(
+        let response = oma_id_agent_ipc::exchange_authorization(
             &service.path,
             &request(Consumer::Sddm, Operation::Login),
             Duration::from_secs(2),
@@ -215,7 +240,7 @@ fn denies_unprivileged_consumer_for_non_root_peer() {
     }
 
     // Quickshell may only ask for Unlock.
-    let response = oma_id_agent_ipc::exchange(
+    let response = oma_id_agent_ipc::exchange_authorization(
         &service.path,
         &request(Consumer::Quickshell, Operation::Login),
         Duration::from_secs(2),
@@ -229,7 +254,7 @@ fn denies_unknown_local_account_opaquely() {
     let service = start_service("unknown-user", Bounds::valid_around(now()));
     let mut candidate = request(Consumer::Quickshell, Operation::Unlock);
     candidate.local_username = "definitely-not-an-oma-user".to_owned();
-    let response = oma_id_agent_ipc::exchange(&service.path, &candidate, Duration::from_secs(2))
+    let response = oma_id_agent_ipc::exchange_authorization(&service.path, &candidate, Duration::from_secs(2))
         .expect("exchange");
     assert_eq!(response.decision, Decision::Deny(DenialCode::NotAuthorized));
 }
@@ -237,7 +262,7 @@ fn denies_unknown_local_account_opaquely() {
 #[test]
 fn maps_lease_denials_to_opaque_not_authorized() {
     let expired = start_service("expired", Bounds::expired(now()));
-    let response = oma_id_agent_ipc::exchange(
+    let response = oma_id_agent_ipc::exchange_authorization(
         &expired.path,
         &request(Consumer::Quickshell, Operation::Unlock),
         Duration::from_secs(2),
@@ -246,7 +271,7 @@ fn maps_lease_denials_to_opaque_not_authorized() {
     assert_eq!(response.decision, Decision::Deny(DenialCode::NotAuthorized));
 
     let rolled_back = start_service("rollback", Bounds::rolled_back_clock(now()));
-    let response = oma_id_agent_ipc::exchange(
+    let response = oma_id_agent_ipc::exchange_authorization(
         &rolled_back.path,
         &request(Consumer::Quickshell, Operation::Unlock),
         Duration::from_secs(2),
@@ -255,7 +280,7 @@ fn maps_lease_denials_to_opaque_not_authorized() {
     assert_eq!(response.decision, Decision::Deny(DenialCode::NotAuthorized));
 
     let stale = start_service("stale-epoch", Bounds::stale_revocation_epoch(now()));
-    let response = oma_id_agent_ipc::exchange(
+    let response = oma_id_agent_ipc::exchange_authorization(
         &stale.path,
         &request(Consumer::Quickshell, Operation::Unlock),
         Duration::from_secs(2),
@@ -265,7 +290,7 @@ fn maps_lease_denials_to_opaque_not_authorized() {
 
     // Elevate is not in the lease's operation set.
     let valid = start_service("op-scope", Bounds::valid_around(now()));
-    let response = oma_id_agent_ipc::exchange(
+    let response = oma_id_agent_ipc::exchange_authorization(
         &valid.path,
         &request(Consumer::Quickshell, Operation::Elevate),
         Duration::from_secs(2),
@@ -282,7 +307,7 @@ fn malformed_frames_close_without_response() {
     let mut stream = UnixStream::connect(&service.path).expect("connect");
     let body = b"this is not json {{{";
     write_message_raw(&mut stream, body);
-    let error = read_message::<AuthorizationResponse>(&mut stream)
+    let error = read_message::<AgentResponse>(&mut stream)
         .expect_err("must not get a response");
     assert!(matches!(
         error,
@@ -294,7 +319,7 @@ fn malformed_frames_close_without_response() {
     let mut stream = UnixStream::connect(&service.path).expect("connect");
     let oversized = (MAX_MESSAGE_BYTES as u32 + 1).to_be_bytes();
     stream.write_all(&oversized).expect("write prefix");
-    let error = read_message::<AuthorizationResponse>(&mut stream)
+    let error = read_message::<AgentResponse>(&mut stream)
         .expect_err("must not get a response");
     assert!(matches!(
         error,
@@ -310,27 +335,42 @@ fn validation_failures_return_correlated_invalid_request() {
     // Unsupported version: body parses, so the reply must correlate.
     let mut stream = UnixStream::connect(&service.path).expect("connect");
     let mut bad_version = request(Consumer::Quickshell, Operation::Unlock);
-    bad_version.version = 2;
-    write_message(&mut stream, &bad_version).expect("write");
-    let response: AuthorizationResponse = read_message(&mut stream).expect("response");
+    bad_version.version = PROTOCOL_VERSION + 1;
+    let expected_id = bad_version.request_id;
+    write_message(&mut stream, &AgentRequest::Authorization(bad_version)).expect("write");
+    let response: AgentResponse = read_message(&mut stream).expect("response");
     assert_eq!(response.decision, Decision::Deny(DenialCode::InvalidRequest));
-    assert_eq!(response.request_id, bad_version.request_id);
+    assert_eq!(response.request_id, expected_id);
 
     // Unsafe local username.
     let mut stream = UnixStream::connect(&service.path).expect("connect");
     let mut bad_name = request(Consumer::Quickshell, Operation::Unlock);
     bad_name.local_username = "Owner".to_owned();
-    write_message(&mut stream, &bad_name).expect("write");
-    let response: AuthorizationResponse = read_message(&mut stream).expect("response");
+    let expected_id = bad_name.request_id;
+    write_message(&mut stream, &AgentRequest::Authorization(bad_name)).expect("write");
+    let response: AgentResponse = read_message(&mut stream).expect("response");
     assert_eq!(response.decision, Decision::Deny(DenialCode::InvalidRequest));
-    assert_eq!(response.request_id, bad_name.request_id);
+    assert_eq!(response.request_id, expected_id);
+
+    // An untagged v1-style frame has no correlation id the daemon can trust:
+    // it must close without a response.
+    let mut stream = UnixStream::connect(&service.path).expect("connect");
+    let body = serde_json::to_vec(&request(Consumer::Quickshell, Operation::Unlock)).expect("json");
+    write_message_raw(&mut stream, &body);
+    let error = read_message::<AgentResponse>(&mut stream)
+        .expect_err("must not get a response");
+    assert!(matches!(
+        error,
+        oma_id_agent_ipc::ProtocolError::Io(ref io_error)
+            if matches!(io_error.kind(), io::ErrorKind::UnexpectedEof | io::ErrorKind::ConnectionReset)
+    ));
 }
 
 #[test]
 fn daemon_down_fails_closed() {
     let path = socket_path("missing-daemon");
     let _ = std::fs::remove_file(&path);
-    let error = oma_id_agent_ipc::exchange(
+    let error = oma_id_agent_ipc::exchange_authorization(
         &path,
         &request(Consumer::Quickshell, Operation::Unlock),
         Duration::from_millis(200),
@@ -352,7 +392,7 @@ fn unresponsive_daemon_times_out() {
         }
     });
     wait_for_socket(&path);
-    let error = oma_id_agent_ipc::exchange(
+    let error = oma_id_agent_ipc::exchange_authorization(
         &path,
         &request(Consumer::Quickshell, Operation::Unlock),
         Duration::from_millis(100),
@@ -387,14 +427,144 @@ fn single_connection_handler_serves_one_exchange() {
             lease,
             trusted_time_floor: now() - 60,
             minimum_revocation_epoch: 1,
+            expected_credential: None,
         };
         handle_connection(&mut service, &config);
     });
-    write_message(&mut client, &request(Consumer::Quickshell, Operation::Unlock))
-        .expect("write");
-    let response: AuthorizationResponse = read_message(&mut client).expect("response");
+    write_message(
+        &mut client,
+        &AgentRequest::Authorization(request(Consumer::Quickshell, Operation::Unlock)),
+    )
+    .expect("write");
+    let response: AgentResponse = read_message(&mut client).expect("response");
     assert_eq!(response.decision, Decision::Allow);
     worker.join().expect("handler thread");
+}
+
+#[test]
+fn credential_exchange_allows_the_pinned_credential() {
+    let service = start_service_with_credential(
+        "cred-allow",
+        Bounds::valid_around(now()),
+        Some("p1nned-credential"),
+    );
+    let response = oma_id_agent_ipc::exchange_credential(
+        &service.path,
+        &credential_request(Consumer::Quickshell, Operation::Unlock, "p1nned-credential"),
+        Duration::from_secs(2),
+    )
+    .expect("exchange");
+    assert_eq!(response.decision, Decision::Allow);
+}
+
+#[test]
+fn credential_exchange_denials_are_opaque() {
+    let pinned = start_service_with_credential(
+        "cred-wrong",
+        Bounds::valid_around(now()),
+        Some("p1nned-credential"),
+    );
+    // Wrong password.
+    let response = oma_id_agent_ipc::exchange_credential(
+        &pinned.path,
+        &credential_request(Consumer::Quickshell, Operation::Unlock, "not-the-credential"),
+        Duration::from_secs(2),
+    )
+    .expect("exchange");
+    assert_eq!(response.decision, Decision::Deny(DenialCode::NotAuthorized));
+
+    // Empty password.
+    let response = oma_id_agent_ipc::exchange_credential(
+        &pinned.path,
+        &credential_request(Consumer::Quickshell, Operation::Unlock, ""),
+        Duration::from_secs(2),
+    )
+    .expect("exchange");
+    assert_eq!(response.decision, Decision::Deny(DenialCode::NotAuthorized));
+
+    // No credential configured at all: indistinguishable from a wrong one.
+    let unconfigured = start_service("cred-unconfigured", Bounds::valid_around(now()));
+    let response = oma_id_agent_ipc::exchange_credential(
+        &unconfigured.path,
+        &credential_request(Consumer::Quickshell, Operation::Unlock, "p1nned-credential"),
+        Duration::from_secs(2),
+    )
+    .expect("exchange");
+    assert_eq!(response.decision, Decision::Deny(DenialCode::NotAuthorized));
+}
+
+#[test]
+fn credential_exchange_enforces_peer_policy_and_request_validation() {
+    let service = start_service_with_credential(
+        "cred-policy",
+        Bounds::valid_around(now()),
+        Some("p1nned-credential"),
+    );
+
+    // Quickshell may only ask for Unlock, for any peer: invalid pair is an
+    // opaque denial, not a protocol answer.
+    let response = oma_id_agent_ipc::exchange_credential(
+        &service.path,
+        &credential_request(Consumer::Quickshell, Operation::Login, "p1nned-credential"),
+        Duration::from_secs(2),
+    )
+    .expect("exchange");
+    assert_eq!(response.decision, Decision::Deny(DenialCode::NotAuthorized));
+
+    // Unknown local account: denied like any other failure (no oracle).
+    let mut unknown = credential_request(
+        Consumer::Quickshell,
+        Operation::Unlock,
+        "p1nned-credential",
+    );
+    unknown.local_username = "definitely-not-an-oma-user".to_owned();
+    let response = oma_id_agent_ipc::exchange_credential(
+        &service.path,
+        &unknown,
+        Duration::from_secs(2),
+    )
+    .expect("exchange");
+    assert_eq!(response.decision, Decision::Deny(DenialCode::NotAuthorized));
+
+    // Oversized credential: structural failure, so the one non-opaque code.
+    let oversized = credential_request(
+        Consumer::Quickshell,
+        Operation::Unlock,
+        &"x".repeat(MAX_CREDENTIAL_BYTES + 1),
+    );
+    let expected_id = oversized.request_id;
+    let mut stream = UnixStream::connect(&service.path).expect("connect");
+    write_message(&mut stream, &AgentRequest::CredentialExchange(oversized)).expect("write");
+    let response: AgentResponse = read_message(&mut stream).expect("response");
+    assert_eq!(response.decision, Decision::Deny(DenialCode::InvalidRequest));
+    assert_eq!(response.request_id, expected_id);
+}
+
+#[test]
+fn credential_exchange_is_independent_of_the_lease() {
+    // Plan 9.1: a verified credential establishes the person, not the
+    // permission. With an expired lease the credential exchange still
+    // passes — and the authorization request on the same service is denied.
+    let expired = start_service_with_credential(
+        "cred-lease-sep",
+        Bounds::expired(now()),
+        Some("p1nned-credential"),
+    );
+    let credential = oma_id_agent_ipc::exchange_credential(
+        &expired.path,
+        &credential_request(Consumer::Quickshell, Operation::Unlock, "p1nned-credential"),
+        Duration::from_secs(2),
+    )
+    .expect("exchange");
+    assert_eq!(credential.decision, Decision::Allow);
+
+    let authorization = oma_id_agent_ipc::exchange_authorization(
+        &expired.path,
+        &request(Consumer::Quickshell, Operation::Unlock),
+        Duration::from_secs(2),
+    )
+    .expect("exchange");
+    assert_eq!(authorization.decision, Decision::Deny(DenialCode::NotAuthorized));
 }
 
 fn write_message_raw(writer: &mut impl Write, body: &[u8]) {

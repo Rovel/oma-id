@@ -18,6 +18,7 @@ struct Args {
     trusted_time_floor: u64,
     minimum_revocation_epoch: u64,
     ops: Vec<CoreOperation>,
+    password: Option<String>,
 }
 
 fn parse_ops(list: &str) -> Result<Vec<CoreOperation>, String> {
@@ -51,6 +52,7 @@ fn parse(args: &[String]) -> Result<Args, String> {
     let mut trusted_time_floor: Option<u64> = None;
     let mut minimum_revocation_epoch: Option<u64> = None;
     let mut ops: Option<String> = None;
+    let mut password: Option<String> = None;
 
     let mut i = 0;
     while i < args.len() {
@@ -75,6 +77,9 @@ fn parse(args: &[String]) -> Result<Args, String> {
                 minimum_revocation_epoch = Some(parse_u64(value, "min-revocation-epoch")?)
             }
             "--ops" => ops = Some(value.into()),
+            // Optional: without it the agent has no credential material and
+            // every credential exchange is denied (fail closed).
+            "--password" => password = Some(value.into()),
             other => return Err(format!("unknown argument {other:?}")),
         }
     }
@@ -101,6 +106,7 @@ fn parse(args: &[String]) -> Result<Args, String> {
         trusted_time_floor,
         minimum_revocation_epoch,
         ops,
+        password,
     })
 }
 
@@ -121,11 +127,14 @@ fn main() -> ExitCode {
         revocation_epoch: args.revocation_epoch,
         operations: &args.ops,
     };
+    // `password` is owned by Args and outlives the config; borrow it.
+    let expected_credential = args.password.as_deref();
     let config = ServiceConfig {
         socket_path: &args.socket,
         lease,
         trusted_time_floor: args.trusted_time_floor,
         minimum_revocation_epoch: args.minimum_revocation_epoch,
+        expected_credential,
     };
     if let Err(error) = oma_id_agent_daemon::serve(&config) {
         eprintln!("fake-agent: {error:?}");

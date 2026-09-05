@@ -1,8 +1,15 @@
 //! Bounded local IPC types and framing for the OMA-ID PAM client and agent.
 //!
-//! This protocol never carries passwords or enrollment tokens. Credential
-//! exchange gets its own reviewed message type after the authorization path is
-//! proven. The only supported target is Linux, matching Omarchy.
+//! Two request kinds share one wire format, tagged by `type` so a daemon can
+//! never mistake one exchange for the other:
+//!
+//! - `authorization`: lease-decision request. Carries no credential material.
+//! - `credential_exchange`: bounded, typed credential material forwarded by
+//!   the PAM client. Verification happens in the agent; per the plan,
+//!   authentication is separate from authorization and a verified credential
+//!   never extends or overrides a lease.
+//!
+//! The only supported target is Linux, matching Omarchy.
 
 #![cfg(target_os = "linux")]
 
@@ -14,9 +21,12 @@ use std::os::unix::net::UnixStream;
 use std::path::Path;
 use std::time::Duration;
 
-pub const PROTOCOL_VERSION: u16 = 1;
+pub const PROTOCOL_VERSION: u16 = 2;
 pub const MAX_MESSAGE_BYTES: usize = 4 * 1024;
 pub const MAX_LOCAL_USERNAME_BYTES: usize = 32;
+/// Upper bound for forwarded credential material. Production adds rate
+/// limiting and breach defenses on top; the wire bound is structural.
+pub const MAX_CREDENTIAL_BYTES: usize = 128;
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
@@ -60,6 +70,55 @@ impl AuthorizationRequest {
     }
 }
 
+/// Credential material forwarded over the local socket. Typed, not an
+/// opaque blob: the wire says what it is, and only bounded strings cross.
+/// Fingerprint/biometric material never crosses this channel; those flows
+/// are decided locally and only ask for authorization.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "kind", content = "value", rename_all = "snake_case")]
+pub enum Credential {
+    Password(String),
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct CredentialExchangeRequest {
+    pub version: u16,
+    pub request_id: [u8; 16],
+    pub local_username: String,
+    pub consumer: Consumer,
+    pub operation: Operation,
+    pub credential: Credential,
+}
+
+impl CredentialExchangeRequest {
+    pub fn validate(&self) -> Result<(), ProtocolError> {
+        if self.version != PROTOCOL_VERSION {
+            return Err(ProtocolError::UnsupportedVersion(self.version));
+        }
+        if !valid_local_username(&self.local_username) {
+            return Err(ProtocolError::InvalidLocalUsername);
+        }
+        let credential_bytes = match &self.credential {
+            Credential::Password(password) => password.len(),
+        };
+        if credential_bytes > MAX_CREDENTIAL_BYTES {
+            return Err(ProtocolError::CredentialTooLarge(credential_bytes));
+        }
+        Ok(())
+    }
+}
+
+/// One request frame from the PAM client. The `type` tag is part of the
+/// wire format (protocol v2): an untagged v1 frame fails to parse and the
+/// connection closes without a response.
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum AgentRequest {
+    Authorization(AuthorizationRequest),
+    CredentialExchange(CredentialExchangeRequest),
+}
+
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DenialCode {
@@ -75,9 +134,11 @@ pub enum Decision {
     Deny(DenialCode),
 }
 
+/// The agent's reply to either request kind. Correlation is by
+/// `request_id`; the reply never echoes credential material.
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 #[serde(deny_unknown_fields)]
-pub struct AuthorizationResponse {
+pub struct AgentResponse {
     pub version: u16,
     pub request_id: [u8; 16],
     pub decision: Decision,
@@ -139,6 +200,7 @@ pub enum ProtocolError {
     MessageTooLarge(usize),
     UnsupportedVersion(u16),
     InvalidLocalUsername,
+    CredentialTooLarge(usize),
     RequestIdMismatch,
 }
 
@@ -198,21 +260,51 @@ pub fn read_message<T: for<'de> Deserialize<'de>>(
     Ok(serde_json::from_slice(&body)?)
 }
 
-pub fn exchange(
+/// Ask the agent for a lease decision. Validation failures (version,
+/// username) happen locally, before anything is connected or sent.
+pub fn exchange_authorization(
     socket_path: &Path,
     request: &AuthorizationRequest,
     timeout: Duration,
-) -> Result<AuthorizationResponse, ProtocolError> {
+) -> Result<AgentResponse, ProtocolError> {
     request.validate()?;
     let mut stream = UnixStream::connect(socket_path)?;
     stream.set_read_timeout(Some(timeout))?;
     stream.set_write_timeout(Some(timeout))?;
-    write_message(&mut stream, request)?;
-    let response: AuthorizationResponse = read_message(&mut stream)?;
+    write_message(
+        &mut stream,
+        &AgentRequest::Authorization(request.clone()),
+    )?;
+    read_agent_response(&mut stream, request.request_id)
+}
+
+/// Forward bounded credential material to the agent for verification.
+/// The client never decides: only an explicit `Allow` is a pass.
+pub fn exchange_credential(
+    socket_path: &Path,
+    request: &CredentialExchangeRequest,
+    timeout: Duration,
+) -> Result<AgentResponse, ProtocolError> {
+    request.validate()?;
+    let mut stream = UnixStream::connect(socket_path)?;
+    stream.set_read_timeout(Some(timeout))?;
+    stream.set_write_timeout(Some(timeout))?;
+    write_message(
+        &mut stream,
+        &AgentRequest::CredentialExchange(request.clone()),
+    )?;
+    read_agent_response(&mut stream, request.request_id)
+}
+
+fn read_agent_response(
+    reader: &mut UnixStream,
+    expected_request_id: [u8; 16],
+) -> Result<AgentResponse, ProtocolError> {
+    let response: AgentResponse = read_message(reader)?;
     if response.version != PROTOCOL_VERSION {
         return Err(ProtocolError::UnsupportedVersion(response.version));
     }
-    if response.request_id != request.request_id {
+    if response.request_id != expected_request_id {
         return Err(ProtocolError::RequestIdMismatch);
     }
     Ok(response)
@@ -270,23 +362,82 @@ mod tests {
     fn round_trips_a_bounded_correlated_exchange() {
         let (mut client, mut server) = UnixStream::pair().expect("socket pair");
         let worker = thread::spawn(move || {
-            let received: AuthorizationRequest = read_message(&mut server).expect("request");
-            received.validate().expect("valid request");
+            let received: AgentRequest = read_message(&mut server).expect("request");
+            match &received {
+                AgentRequest::Authorization(request) => request.validate().expect("valid"),
+                AgentRequest::CredentialExchange(_) => panic!("wrong request kind"),
+            }
             write_message(
                 &mut server,
-                &AuthorizationResponse {
+                &AgentResponse {
                     version: PROTOCOL_VERSION,
-                    request_id: received.request_id,
+                    request_id: [7; 16],
                     decision: Decision::Allow,
                 },
             )
             .expect("response");
         });
-        write_message(&mut client, &request()).expect("write request");
-        let response: AuthorizationResponse = read_message(&mut client).expect("read response");
+        write_message(&mut client, &AgentRequest::Authorization(request()))
+            .expect("write request");
+        let response: AgentResponse = read_message(&mut client).expect("read response");
         assert_eq!(response.decision, Decision::Allow);
         assert_eq!(response.request_id, request().request_id);
         worker.join().expect("server worker");
+    }
+
+    #[test]
+    fn credential_exchange_round_trips_and_rejects_unknown_tags() {
+        let credential = CredentialExchangeRequest {
+            version: PROTOCOL_VERSION,
+            request_id: [8; 16],
+            local_username: "oma_user-1".to_owned(),
+            consumer: Consumer::Quickshell,
+            operation: Operation::Unlock,
+            credential: Credential::Password("s3cret".to_owned()),
+        };
+        credential.validate().expect("valid request");
+        let frame = serde_json::to_vec(&AgentRequest::CredentialExchange(credential)).expect("json");
+        let parsed: AgentRequest = serde_json::from_slice(&frame).expect("parse");
+        assert!(matches!(
+            parsed,
+            AgentRequest::CredentialExchange(ref received)
+                if received.credential == Credential::Password("s3cret".to_owned())
+        ));
+
+        // An untagged v1-style body and an unknown tag both fail to parse:
+        // the daemon closes without a response rather than guess.
+        let untagged = br#"{"version":2,"request_id":[7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7],"local_username":"u","consumer":"tty","operation":"login"}"#;
+        assert!(serde_json::from_slice::<AgentRequest>(untagged).is_err());
+        let unknown_tag = br#"{"type":"password","version":2}"#;
+        assert!(serde_json::from_slice::<AgentRequest>(unknown_tag).is_err());
+    }
+
+    #[test]
+    fn credential_requests_are_structurally_bounded() {
+        const OVERSIZED: usize = MAX_CREDENTIAL_BYTES + 1;
+        const NEXT_VERSION: u16 = PROTOCOL_VERSION + 1;
+        let mut request = CredentialExchangeRequest {
+            version: PROTOCOL_VERSION,
+            request_id: [8; 16],
+            local_username: "oma_user-1".to_owned(),
+            consumer: Consumer::Quickshell,
+            operation: Operation::Unlock,
+            credential: Credential::Password("x".repeat(MAX_CREDENTIAL_BYTES)),
+        };
+        request.validate().expect("exactly at the bound is fine");
+
+        request.credential = Credential::Password("x".repeat(OVERSIZED));
+        assert!(matches!(
+            request.validate(),
+            Err(ProtocolError::CredentialTooLarge(OVERSIZED))
+        ));
+
+        request.version = NEXT_VERSION;
+        request.credential = Credential::Password("short".to_owned());
+        assert!(matches!(
+            request.validate(),
+            Err(ProtocolError::UnsupportedVersion(NEXT_VERSION))
+        ));
     }
 
     #[test]
@@ -300,19 +451,20 @@ mod tests {
 
     #[test]
     fn rejects_unknown_fields_versions_and_unsafe_names() {
-        let body = br#"{"version":1,"request_id":[7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7],"local_username":"user","consumer":"tty","operation":"login","extra":true}"#;
+        let body = br#"{"type":"authorization","version":1,"request_id":[7,7,7,7,7,7,7,7,7,7,7,7,7,7,7,7],"local_username":"user","consumer":"tty","operation":"login","extra":true}"#;
         let mut frame = Vec::from((body.len() as u32).to_be_bytes());
         frame.extend_from_slice(body);
         assert!(matches!(
-            read_message::<AuthorizationRequest>(&mut frame.as_slice()),
+            read_message::<AgentRequest>(&mut frame.as_slice()),
             Err(ProtocolError::Json(_))
         ));
 
+        const NEXT_VERSION: u16 = PROTOCOL_VERSION + 1;
         let mut invalid = request();
-        invalid.version = 2;
+        invalid.version = NEXT_VERSION;
         assert!(matches!(
             invalid.validate(),
-            Err(ProtocolError::UnsupportedVersion(2))
+            Err(ProtocolError::UnsupportedVersion(NEXT_VERSION))
         ));
         for name in [
             "",
@@ -388,7 +540,7 @@ mod tests {
         client
             .set_read_timeout(Some(Duration::from_millis(20)))
             .expect("timeout");
-        let error = read_message::<AuthorizationResponse>(&mut client).expect_err("must timeout");
+        let error = read_message::<AgentResponse>(&mut client).expect_err("must timeout");
         assert!(matches!(
             error,
             ProtocolError::Io(ref io_error)
@@ -398,7 +550,7 @@ mod tests {
         let path =
             std::env::temp_dir().join(format!("oma-id-agent-{}-missing.sock", std::process::id()));
         assert!(matches!(
-            exchange(&path, &request(), Duration::from_millis(20)),
+            exchange_authorization(&path, &request(), Duration::from_millis(20)),
             Err(ProtocolError::Io(_))
         ));
     }

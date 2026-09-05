@@ -10,5 +10,8 @@ libc.workspace = true
 oma-id-agent-core = { path = "../oma-id-agent-core" }
 oma-id-agent-ipc = { path = "../oma-id-agent-ipc" }
 
+[dev-dependencies]
+serde_json.workspace = true
+
 [lib]
 path = "src/lib.rs"

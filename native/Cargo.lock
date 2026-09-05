@@ -31,6 +31,7 @@ dependencies = [
  "libc",
  "oma-id-agent-core",
  "oma-id-agent-ipc",
+ "serde_json",
 ]
 
 [[package]]
