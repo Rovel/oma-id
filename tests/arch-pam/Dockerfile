@@ -5,7 +5,7 @@ RUN echo 'Server = https://archive.archlinux.org/repos/2026/09/04/$repo/os/$arch
 RUN pacman -Syu --noconfirm --needed base-devel rust cargo pam
 COPY pam-test-client.c /src/pam-test-client.c
 COPY context.tar.gz /tmp/context.tar.gz
-RUN mkdir /src && tar -xzf /tmp/context.tar.gz -C /src
+RUN tar -xzf /tmp/context.tar.gz -C /src
 COPY build.sh /build.sh
 WORKDIR /src/native
 CMD ["bash", "/build.sh"]
