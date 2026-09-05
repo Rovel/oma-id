@@ -125,7 +125,7 @@ message type, no PAM stage wiring yet.
 
 ### PAM module core (oma-id-pam-module)
 
-`pam_oma_id` front end over the client core: `pam_sm_auth` and
+`pam_oma_id` front end over the client core: `pam_sm_authenticate` and
 `pam_sm_acct_mgmt` entry points read `PAM_SERVICE`/`PAM_USER` from the
 handle via runtime-resolved `pam_get_item` (dlopen — no hard libpam link,
 so it builds on any Linux host), map the service to a consumer/operation
@@ -161,15 +161,43 @@ peer policy in the harness → test branches on euid and asserts the lease
 operation-scope denial; (3) the PAM-client denial anchor was
 euid-dependent → re-anchored on Quickshell/Login, denied for every peer.
 
-No real libpam load and no PAM consumer run yet: this is build + suite
-evidence only.
+### Real libpam consumer run (disposable, pinned)
+
+Same pipeline, context at commit db8764698 (tree d508a992…, source
+tarball sha256 e73f7086…), image `oma-id-p0-arch-pam:local`
+sha256:933b58ab…, rustc 1.98.0 (Arch). `tests/arch-pam/pam-test-client.c`
+is a minimal libpam client (`pam_start`/`pam_authenticate`/
+`pam_acct_mgmt`, conv that never prompts); `/etc/pam.d/sddm` lists
+`/out/pam_oma_id.so` for auth+account; the agent is the `fake_agent` P0
+harness binary on `/run/oma-id/agent.sock`. All 8 result lines green:
+
+cargo-test 0 (35 tests), build-module 0, compile-client 0,
+scenario-valid 0 (`auth:0 acct:0`), scenario-expired 0 (`auth:7`,
+PAM_AUTH_ERR explicit denial), scenario-down 0 (`auth:4`,
+PAM_SYSTEM_ERR unavailable), scenario-unmapped 0 (`auth:4`, fail-closed
+on unmapped service). Artifact `pam_oma_id.so`
+sha256:f34d2420e1afe1b047152b420361ef1e215dad00c1e7a930d0baf3e925aa2bb6
+exporting `pam_sm_authenticate` and `pam_sm_acct_mgmt`.
+
+Exact failures found by the container run (all fixed, all recorded):
+(4) C client used a nonexistent `pam_message_t` typedef → conv callback
+takes `(int num_msg, const struct pam_message **, struct pam_response **, void *)`;
+(5) exporting `pam_sm_auth` made libpam return PAM_MODULE_UNKNOWN (28)
+without calling us — the auth entry point is `pam_sm_authenticate`
+(pam_handlers.c);
+(6) hand-written PAM constants were wrong: SYSTEM_ERR is 4 (not 1),
+AUTH_ERR 7 (not 6), PERM_DENIED 6 (not 3);
+(7) harness passed service name "oma-test" to `pam_start`, so
+PAM_SERVICE was unmapped and every scenario failed closed before reaching
+the agent — the consumer context is `sddm`.
+
+Still no production PAM module install, no daemon lifecycle, no real
+SDDM. This is a disposable-container protocol demonstration with a fake
+agent; no login gate is claimed.
 
 ### Next native slice
 
-Real libpam consumer path in the same disposable Arch container: a small
-PAM client harness (libpam `pam_start`/`pam_authenticate`) with an
-`/etc/pam.d` service listing `pam_oma_id.so`, run against the fake agent
-daemon on `/run/oma-id/agent.sock`; assert allow/deny/unavailable behavior
-through real libpam and record exact results. Then the credential-exchange
-message type once the authorization path is proven in a real consumer. No
-login gate is claimed by any of the above.
+Credential-exchange message type in the IPC crate (the wire step that
+makes the P0 stand-in honest about where credentials come from), then the
+omarchy-iso integration branch per the recorded strategy. No login gate
+is claimed by any of the above.
