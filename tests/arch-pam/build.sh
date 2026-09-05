@@ -23,8 +23,11 @@ MODULE=/out/pam_oma_id.so
 AGENT=target/release/fake_agent
 SOCKET=/run/oma-id/agent.sock
 mkdir -p /etc/pam.d /run/oma-id
-printf 'auth\trequired\t%s\naccount\trequired\t%s\n' "$MODULE" "$MODULE" > /etc/pam.d/oma-test
-cp /etc/pam.d/oma-test /etc/pam.d/oma-unmapped
+# The PAM service context IS the consumer: pam_start("sddm") sets
+# PAM_SERVICE to "sddm", which the module maps to Sddm/Login. (A name like
+# "oma-test" is unmapped and would fail closed — that is the negative case.)
+printf 'auth\trequired\t%s\naccount\trequired\t%s\n' "$MODULE" "$MODULE" > /etc/pam.d/sddm
+cp /etc/pam.d/sddm /etc/pam.d/oma-unmapped
 
 run_step compile-client gcc -O2 -Wall -o /out/pam-test-client /src/pam-test-client.c -lpam
 
@@ -42,7 +45,7 @@ scenario() {
   rm -f "$SOCKET"
   "$AGENT" --socket "$SOCKET" --subject person-1 --device device-1 \
     --ops "Login,Unlock" --trusted-time-floor $((now - 60)) \
-    --min-revocation-epoch 1 "$@" &
+    --min-revocation-epoch 1 "$@" >"/out/agent-$name.log" 2>&1 &
   agent_pid=$!
   if wait_for_socket; then
     output=$(/out/pam-test-client "$service" root)
@@ -53,6 +56,8 @@ scenario() {
   {
     echo "expected: $expected"
     echo "actual:   $output"
+    echo "--- agent log ---"
+    cat "/out/agent-$name.log"
   } > "/out/scenario-$name.log"
   if [ "$output" = "$expected" ]; then
     printf 'scenario-%s\t0\n' "$name" >> /out/results.tsv
@@ -64,14 +69,14 @@ scenario() {
 }
 
 # Valid lease, mapped service: auth and account stages both pass.
-scenario valid "auth:0 acct:0" oma-test \
+scenario valid "auth:0 acct:0" sddm \
   --not-before $((now - 60)) --expires-at $((now + 3600)) --revocation-epoch 1
 # Expired lease: explicit denial from the agent (PAM_AUTH_ERR = 7).
-scenario expired "auth:7 acct:-1" oma-test \
+scenario expired "auth:7 acct:-1" sddm \
   --not-before $((now - 7200)) --expires-at $((now - 3600)) --revocation-epoch 1
 # Mapped service but no agent at all: unavailable (PAM_SYSTEM_ERR = 4).
 rm -f "$SOCKET"
-output=$(/out/pam-test-client oma-test root)
+output=$(/out/pam-test-client sddm root)
 {
   echo "expected: auth:4 acct:-1"
   echo "actual:   $output"
