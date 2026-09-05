@@ -192,15 +192,17 @@ fn allows_same_user_quickshell_unlock() {
 fn denies_unprivileged_consumer_for_non_root_peer() {
     let service = start_service("peer", Bounds::valid_around(now()));
     if unsafe { libc::geteuid() } == 0 {
-        // Root peer (container): Sddm/Login is a valid root pair under the
-        // valid lease, but Quickshell/Login still violates the operation map.
+        // Root peer (container): Sddm/Login passes the peer policy but is
+        // still denied because the harness lease only scopes Unlock —
+        // defense in depth, and the opaque code shows the client cannot
+        // tell which layer fired.
         let response = oma_id_agent_ipc::exchange(
             &service.path,
             &request(Consumer::Sddm, Operation::Login),
             Duration::from_secs(2),
         )
         .expect("exchange");
-        assert_eq!(response.decision, Decision::Allow);
+        assert_eq!(response.decision, Decision::Deny(DenialCode::NotAuthorized));
     } else {
         // Sddm/Login is a valid root pair, but this peer is not root.
         let response = oma_id_agent_ipc::exchange(
