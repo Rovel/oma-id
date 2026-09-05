@@ -66,25 +66,25 @@ scenario() {
 # Valid lease, mapped service: auth and account stages both pass.
 scenario valid "auth:0 acct:0" oma-test \
   --not-before $((now - 60)) --expires-at $((now + 3600)) --revocation-epoch 1
-# Expired lease: explicit denial from the agent (PAM_AUTH_ERR = 6).
-scenario expired "auth:6 acct:-1" oma-test \
+# Expired lease: explicit denial from the agent (PAM_AUTH_ERR = 7).
+scenario expired "auth:7 acct:-1" oma-test \
   --not-before $((now - 7200)) --expires-at $((now - 3600)) --revocation-epoch 1
-# Mapped service but no agent at all: unavailable (PAM_SYSTEM_ERR = 1).
+# Mapped service but no agent at all: unavailable (PAM_SYSTEM_ERR = 4).
 rm -f "$SOCKET"
 output=$(/out/pam-test-client oma-test root)
 {
-  echo "expected: auth:1 acct:-1"
+  echo "expected: auth:4 acct:-1"
   echo "actual:   $output"
 } > /out/scenario-down.log
-if [ "$output" = "auth:1 acct:-1" ]; then
+if [ "$output" = "auth:4 acct:-1" ]; then
   printf 'scenario-down\t0\n' >> /out/results.tsv
   echo "scenario-down: ok"
 else
   printf 'scenario-down\t1\n' >> /out/results.tsv
   echo "scenario-down: MISMATCH (see /out/scenario-down.log)"
 fi
-# Unmapped PAM service: the module fails closed (PAM_SYSTEM_ERR = 1).
-scenario unmapped "auth:1 acct:-1" oma-unmapped \
+# Unmapped PAM service: the module fails closed (PAM_SYSTEM_ERR = 4).
+scenario unmapped "auth:4 acct:-1" oma-unmapped \
   --not-before $((now - 60)) --expires-at $((now + 3600)) --revocation-epoch 1
 
 if awk '$2 != 0 { failed=1 } END {exit !failed}' /out/results.tsv; then exit 1; fi

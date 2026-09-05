@@ -30,12 +30,12 @@ use std::ffi::CStr;
 use std::os::raw::{c_char, c_int, c_void};
 use std::ptr;
 
-// PAM return codes (libpam/pam_modules.h).
+// PAM return codes (Linux-PAM <security/_pam_types.h>).
 pub const PAM_SUCCESS: c_int = 0;
-pub const PAM_SYSTEM_ERR: c_int = 1;
-pub const PAM_BUF_ERR: c_int = 2;
-pub const PAM_PERM_DENIED: c_int = 3;
-pub const PAM_AUTH_ERR: c_int = 6;
+pub const PAM_SYSTEM_ERR: c_int = 4;
+pub const PAM_BUF_ERR: c_int = 5;
+pub const PAM_PERM_DENIED: c_int = 6;
+pub const PAM_AUTH_ERR: c_int = 7;
 
 // PAM item types (libpam/pam_items.h).
 const PAM_SERVICE: c_int = 1;
@@ -48,15 +48,18 @@ type PamHandle = *mut c_void;
 
 #[derive(Clone, Copy, Debug)]
 pub enum Stage {
-    /// `pam_sm_auth`: credential stage.
+    /// `pam_sm_authenticate`: credential stage.
     Auth,
     /// `pam_sm_acct_mgmt`: account management stage. Per the plan, account
     /// checks must also obtain an explicit agent authorization decision.
     Account,
 }
 
+// Linux-PAM resolves the auth-stage entry point as `pam_sm_authenticate`
+// (pam_handlers.c), not `pam_sm_auth` — exporting the wrong name makes
+// libpam return PAM_MODULE_UNKNOWN without ever calling us.
 #[unsafe(no_mangle)]
-pub unsafe extern "C" fn pam_sm_auth(
+pub unsafe extern "C" fn pam_sm_authenticate(
     handle: PamHandle,
     fmt: c_int,
     argv: *const *const c_char,
