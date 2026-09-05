@@ -1,0 +1,8 @@
+.cache/
+__pycache__/
+.env
+.env.*
+!.env.example
+*.qcow2
+*.iso
+native/target/

@@ -1,0 +1,14 @@
+[package]
+name = "oma-id-agent-daemon"
+version = "0.0.1"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[dependencies]
+libc.workspace = true
+oma-id-agent-core = { path = "../oma-id-agent-core" }
+oma-id-agent-ipc = { path = "../oma-id-agent-ipc" }
+
+[lib]
+path = "src/lib.rs"

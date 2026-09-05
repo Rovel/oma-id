@@ -1,0 +1,40 @@
+[tools]
+node = "latest"
+ruby = "4.0.6"
+rust = "1.88.0"
+
+[tasks."p0:install"]
+description = "Install the locked P0 gem bundle locally"
+run = "BUNDLE_GEMFILE=tests/interop/Gemfile BUNDLE_PATH=$PWD/.cache/bundle BUNDLE_USER_HOME=$PWD/.cache/bundler bundle install"
+
+[tasks."p0:smoke"]
+description = "Check Ruby 4 loads the selected Rails/OIDC/UI dependencies"
+run = "BUNDLE_GEMFILE=tests/interop/Gemfile BUNDLE_PATH=$PWD/.cache/bundle BUNDLE_USER_HOME=$PWD/.cache/bundler bundle exec ruby tests/interop/dependency_smoke.rb"
+
+[tasks."db:up"]
+description = "Start the local PostgreSQL service and wait for readiness"
+run = "docker compose up -d --wait postgres"
+
+[tasks."p0:protocol"]
+description = "Run in-process Rails protocol experiments in a disposable PostgreSQL schema"
+run = "BUNDLE_GEMFILE=tests/interop/Gemfile BUNDLE_PATH=$PWD/.cache/bundle BUNDLE_USER_HOME=$PWD/.cache/bundler bundle exec ruby tests/interop/protocol_test.rb"
+
+[tasks."p0:protocol:raw"]
+description = "Reproduce unadapted discovery and missing device-denial failures (expected nonzero exit)"
+run = "OMA_P0_RAW=1 mise run p0:protocol"
+
+[tasks."p0:lifecycle:gates"]
+description = "Run the protocol suite including durable family lifecycle acceptance gates"
+run = "OMA_P0_LIFECYCLE_GATES=1 mise run p0:protocol"
+
+[tasks."p0:lifecycle:raw"]
+description = "Reproduce original family-replay and raw dependency gaps (expected nonzero exit)"
+run = "OMA_P0_RAW=1 OMA_P0_LIFECYCLE_GATES=1 mise run p0:protocol"
+
+[tasks."db:stop"]
+description = "Stop PostgreSQL while retaining its data volume"
+run = "docker compose stop postgres"
+
+[tasks."p0:agent-core"]
+description = "Test the privilege-free OMA-ID authorization lease core"
+run = "cargo test --manifest-path native/Cargo.toml --locked"

@@ -1,0 +1,454 @@
+{
+  "captured_at": "2026-09-05T02:17:49.328186+00:00",
+  "status": "discovery candidates; not a supported runtime lock",
+  "repositories": {
+    "omarchy": {
+      "repository": "omacom/omarchy",
+      "requested_ref": "quattro",
+      "commit": "493067741e081c3b09082da6bfd51e99ec24ef00",
+      "archive_url": "https://codeload.github.com/omacom/omarchy/tar.gz/493067741e081c3b09082da6bfd51e99ec24ef00",
+      "archive_sha256": "6456b3d5b8e28af78d67972b5f0ea4890d088a579aec4a4c7ba694ca9a3a028b"
+    },
+    "omarchy-iso": {
+      "repository": "omacom/omarchy-iso",
+      "requested_ref": "quattro",
+      "commit": "2673c613d9a71e23920e43fbb951238145e0f1e8",
+      "archive_url": "https://codeload.github.com/omacom/omarchy-iso/tar.gz/2673c613d9a71e23920e43fbb951238145e0f1e8",
+      "archive_sha256": "d4d69c27cf8f9979ab165d7178802282a41fbfff660bcc4ffdef303704d129e2"
+    },
+    "authd": {
+      "repository": "canonical/authd",
+      "requested_ref": "HEAD",
+      "commit": "e64cf73a18e600ac7995fe1d96433ce188d43488",
+      "archive_url": "https://codeload.github.com/canonical/authd/tar.gz/e64cf73a18e600ac7995fe1d96433ce188d43488",
+      "archive_sha256": "bb095c86adea7b7dc09c8af95d5ee975bbe3098e5a859dd2358c2f4b96c8c170"
+    },
+    "doorkeeper": {
+      "repository": "doorkeeper-gem/doorkeeper",
+      "requested_ref": "HEAD",
+      "commit": "079fb94d41674d19231ecbaba37908c65751c0d2",
+      "archive_url": "https://codeload.github.com/doorkeeper-gem/doorkeeper/tar.gz/079fb94d41674d19231ecbaba37908c65751c0d2",
+      "archive_sha256": "e9849751da2cf75ca97fadb3f3711431140b2a8a0300d50e0ec535ec084f4995"
+    },
+    "doorkeeper-openid_connect": {
+      "repository": "doorkeeper-gem/doorkeeper-openid_connect",
+      "requested_ref": "HEAD",
+      "commit": "4e514f0ab45cb153f8f26da7b70890fb0f15dc96",
+      "archive_url": "https://codeload.github.com/doorkeeper-gem/doorkeeper-openid_connect/tar.gz/4e514f0ab45cb153f8f26da7b70890fb0f15dc96",
+      "archive_sha256": "1fac726de1c773b3b60644cc07bbb050cf39d23ff20213d6e1bcefcc6692469c"
+    },
+    "doorkeeper-device_authorization_grant": {
+      "repository": "exop-group/doorkeeper-device_authorization_grant",
+      "requested_ref": "HEAD",
+      "commit": "91daad72815528d68361c3cbb53ed0720b8e455d",
+      "archive_url": "https://codeload.github.com/exop-group/doorkeeper-device_authorization_grant/tar.gz/91daad72815528d68361c3cbb53ed0720b8e455d",
+      "archive_sha256": "49ec7f3a58d3ec908d000a6e3c0ef5a51fe78aaf1a8532bec93ae951fd89cfe6"
+    },
+    "webauthn": {
+      "repository": "cedarcode/webauthn-ruby",
+      "requested_ref": "HEAD",
+      "commit": "54fd2ff3a5f9ef47618453c4a16f51a476cb38ab",
+      "archive_url": "https://codeload.github.com/cedarcode/webauthn-ruby/tar.gz/54fd2ff3a5f9ef47618453c4a16f51a476cb38ab",
+      "archive_sha256": "275c8b6e63a6546dc5ad9e95c0a32e6ead6320761d49a63df3e970426b85756c"
+    },
+    "phlex": {
+      "repository": "phlex-ruby/phlex",
+      "requested_ref": "HEAD",
+      "commit": "b787d0bad3cff3bea7560f6876c46b0cb4737600",
+      "archive_url": "https://codeload.github.com/phlex-ruby/phlex/tar.gz/b787d0bad3cff3bea7560f6876c46b0cb4737600",
+      "archive_sha256": "b1d8995f64fc0ce3348890a03f3e131268e9a3628f8c1c335e92f1b51f258714"
+    },
+    "phlex-rails": {
+      "repository": "phlex-ruby/phlex-rails",
+      "requested_ref": "HEAD",
+      "commit": "c0aa7b4ce05392a1ef51080a04cd4356eedeeb6f",
+      "archive_url": "https://codeload.github.com/phlex-ruby/phlex-rails/tar.gz/c0aa7b4ce05392a1ef51080a04cd4356eedeeb6f",
+      "archive_sha256": "802cb1fc3581d207c20bdf575a0d1833a8fe0ea1f3e5a70d6e56ca5255056564"
+    },
+    "ruby_ui": {
+      "repository": "ruby-ui/ruby_ui",
+      "requested_ref": "HEAD",
+      "commit": "f03b20d401f17d6e56552a32563fa4db4777cc4e",
+      "archive_url": "https://codeload.github.com/ruby-ui/ruby_ui/tar.gz/f03b20d401f17d6e56552a32563fa4db4777cc4e",
+      "archive_sha256": "a2f01b2ebc3cf7ea12249bdfd289386ed9f73eab6bab4605749f517f5aa1ab70"
+    }
+  },
+  "gems": {
+    "rails": {
+      "version": "8.1.3.1",
+      "sha": "ccd11a36bfc171bf9c66d585d14c0ece91c0c9dde840aae60c0118d6f5c9c52a",
+      "licenses": [
+        "MIT"
+      ],
+      "dependencies": {
+        "development": [],
+        "runtime": [
+          {
+            "name": "actioncable",
+            "requirements": "= 8.1.3.1"
+          },
+          {
+            "name": "actionmailbox",
+            "requirements": "= 8.1.3.1"
+          },
+          {
+            "name": "actionmailer",
+            "requirements": "= 8.1.3.1"
+          },
+          {
+            "name": "actionpack",
+            "requirements": "= 8.1.3.1"
+          },
+          {
+            "name": "actiontext",
+            "requirements": "= 8.1.3.1"
+          },
+          {
+            "name": "actionview",
+            "requirements": "= 8.1.3.1"
+          },
+          {
+            "name": "activejob",
+            "requirements": "= 8.1.3.1"
+          },
+          {
+            "name": "activemodel",
+            "requirements": "= 8.1.3.1"
+          },
+          {
+            "name": "activerecord",
+            "requirements": "= 8.1.3.1"
+          },
+          {
+            "name": "activestorage",
+            "requirements": "= 8.1.3.1"
+          },
+          {
+            "name": "activesupport",
+            "requirements": "= 8.1.3.1"
+          },
+          {
+            "name": "bundler",
+            "requirements": ">= 1.15.0"
+          },
+          {
+            "name": "railties",
+            "requirements": "= 8.1.3.1"
+          }
+        ]
+      },
+      "source_code_uri": "https://github.com/rails/rails/tree/v8.1.3.1"
+    },
+    "doorkeeper": {
+      "version": "5.9.6",
+      "sha": "19b0d2c1099750762d8ddbf7ef4d79e38d2c80f583d97bbfd122a73c4af20d95",
+      "licenses": [
+        "MIT"
+      ],
+      "dependencies": {
+        "development": [
+          {
+            "name": "appraisal",
+            "requirements": ">= 0"
+          },
+          {
+            "name": "capybara",
+            "requirements": ">= 0"
+          },
+          {
+            "name": "coveralls_reborn",
+            "requirements": ">= 0"
+          },
+          {
+            "name": "database_cleaner",
+            "requirements": "~> 2.0"
+          },
+          {
+            "name": "factory_bot",
+            "requirements": "~> 6.0"
+          },
+          {
+            "name": "generator_spec",
+            "requirements": "~> 0.10.0"
+          },
+          {
+            "name": "grape",
+            "requirements": ">= 0"
+          },
+          {
+            "name": "rake",
+            "requirements": ">= 11.3.0"
+          },
+          {
+            "name": "rspec-rails",
+            "requirements": ">= 0"
+          },
+          {
+            "name": "timecop",
+            "requirements": ">= 0"
+          }
+        ],
+        "runtime": [
+          {
+            "name": "railties",
+            "requirements": ">= 5"
+          }
+        ]
+      },
+      "source_code_uri": "https://github.com/doorkeeper-gem/doorkeeper"
+    },
+    "doorkeeper-openid_connect": {
+      "version": "1.10.5",
+      "sha": "1382e5573e2fdfef2b16ce9969af777e61496b8e9cff0197789d8bf9c12efb02",
+      "licenses": [
+        "MIT"
+      ],
+      "dependencies": {
+        "development": [
+          {
+            "name": "bigdecimal",
+            "requirements": ">= 0"
+          },
+          {
+            "name": "conventional-changelog",
+            "requirements": "~> 1.2"
+          },
+          {
+            "name": "drb",
+            "requirements": ">= 0"
+          },
+          {
+            "name": "factory_bot",
+            "requirements": ">= 0"
+          },
+          {
+            "name": "mutex_m",
+            "requirements": ">= 0"
+          },
+          {
+            "name": "pry-byebug",
+            "requirements": ">= 0"
+          },
+          {
+            "name": "rspec-rails",
+            "requirements": ">= 0"
+          },
+          {
+            "name": "sqlite3",
+            "requirements": ">= 1.3.6"
+          }
+        ],
+        "runtime": [
+          {
+            "name": "doorkeeper",
+            "requirements": ">= 5.5, < 6.0"
+          },
+          {
+            "name": "jwt",
+            "requirements": ">= 2.5"
+          },
+          {
+            "name": "ostruct",
+            "requirements": ">= 0.5"
+          }
+        ]
+      },
+      "source_code_uri": "https://github.com/doorkeeper-gem/doorkeeper-openid_connect"
+    },
+    "doorkeeper-device_authorization_grant": {
+      "version": "1.0.3",
+      "sha": "94c3ac12a0d50942850ecd58ed64298b397a5e903e8880cb68d4085600932679",
+      "licenses": [
+        "MIT"
+      ],
+      "dependencies": {
+        "development": [
+          {
+            "name": "rubocop",
+            "requirements": "~> 1.23"
+          },
+          {
+            "name": "rubocop-performance",
+            "requirements": "~> 1.12"
+          },
+          {
+            "name": "rubocop-rails",
+            "requirements": "~> 2.12"
+          },
+          {
+            "name": "simplecov",
+            "requirements": "~> 0.21.2"
+          },
+          {
+            "name": "sqlite3",
+            "requirements": "~> 1.4"
+          },
+          {
+            "name": "yard",
+            "requirements": "~> 0.9.27"
+          }
+        ],
+        "runtime": [
+          {
+            "name": "doorkeeper",
+            "requirements": "~> 5.5"
+          }
+        ]
+      },
+      "source_code_uri": "https://github.com/exop-group/doorkeeper-device_authorization_grant"
+    },
+    "webauthn": {
+      "version": "3.4.3",
+      "sha": "9be6f5f838f3405b0226e560aa40b67cc8c15ec9154509b997caa7ec9a05e1fc",
+      "licenses": [
+        "MIT"
+      ],
+      "dependencies": {
+        "development": [
+          {
+            "name": "bundler",
+            "requirements": ">= 1.17, < 3.0"
+          },
+          {
+            "name": "byebug",
+            "requirements": "~> 11.0"
+          },
+          {
+            "name": "rake",
+            "requirements": "~> 13.0"
+          },
+          {
+            "name": "rspec",
+            "requirements": "~> 3.8"
+          },
+          {
+            "name": "rubocop",
+            "requirements": "~> 1"
+          },
+          {
+            "name": "rubocop-rake",
+            "requirements": "~> 0.5"
+          },
+          {
+            "name": "rubocop-rspec",
+            "requirements": ">= 2.2, < 4.0"
+          }
+        ],
+        "runtime": [
+          {
+            "name": "android_key_attestation",
+            "requirements": "~> 0.3.0"
+          },
+          {
+            "name": "bindata",
+            "requirements": "~> 2.4"
+          },
+          {
+            "name": "cbor",
+            "requirements": "~> 0.5.9"
+          },
+          {
+            "name": "cose",
+            "requirements": "~> 1.1"
+          },
+          {
+            "name": "openssl",
+            "requirements": ">= 2.2"
+          },
+          {
+            "name": "safety_net_attestation",
+            "requirements": "~> 0.5.0"
+          },
+          {
+            "name": "tpm-key_attestation",
+            "requirements": "~> 0.14.0"
+          }
+        ]
+      },
+      "source_code_uri": "https://github.com/cedarcode/webauthn-ruby"
+    },
+    "phlex": {
+      "version": "2.4.1",
+      "sha": "e596717fbfe38b5271840266758779ebe75092e02629f0c170287e6290a70b12",
+      "licenses": [
+        "MIT"
+      ],
+      "dependencies": {
+        "development": [],
+        "runtime": [
+          {
+            "name": "refract",
+            "requirements": "~> 1.0"
+          },
+          {
+            "name": "zeitwerk",
+            "requirements": "~> 2.7"
+          }
+        ]
+      },
+      "source_code_uri": "https://github.com/phlex-ruby/phlex"
+    },
+    "phlex-rails": {
+      "version": "2.4.0",
+      "sha": "2bcddbd488681acb25753bab1887d3ac150e644244ff8ba307f2171a4d0195f5",
+      "licenses": [
+        "MIT"
+      ],
+      "dependencies": {
+        "development": [],
+        "runtime": [
+          {
+            "name": "phlex",
+            "requirements": "~> 2.4.0"
+          },
+          {
+            "name": "railties",
+            "requirements": ">= 7.1, < 9"
+          },
+          {
+            "name": "zeitwerk",
+            "requirements": "~> 2.7"
+          }
+        ]
+      },
+      "source_code_uri": "https://github.com/phlex-ruby/phlex-rails"
+    },
+    "ruby_ui": {
+      "version": "1.6.0",
+      "sha": "f845573284d39e391f3d7a1ed93ca3bc84f797ba094a7a2e91cf13ff11aa0550",
+      "licenses": [
+        "MIT"
+      ],
+      "dependencies": {
+        "development": [
+          {
+            "name": "minitest",
+            "requirements": "~> 6.0"
+          },
+          {
+            "name": "phlex",
+            "requirements": "~> 2.1, >= 2.1.2"
+          },
+          {
+            "name": "rake",
+            "requirements": "~> 13.0"
+          },
+          {
+            "name": "rouge",
+            "requirements": "~> 5.0.0"
+          },
+          {
+            "name": "standard",
+            "requirements": "~> 1.0"
+          },
+          {
+            "name": "tailwind_merge",
+            "requirements": "~> 1.4"
+          }
+        ],
+        "runtime": []
+      },
+      "source_code_uri": null
+    }
+  }
+}

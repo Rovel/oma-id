@@ -1,0 +1,23 @@
+name: oma-id
+
+services:
+  postgres:
+    image: postgres:18.6-bookworm
+    environment:
+      POSTGRES_USER: oma_id
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-oma_id_local_only}
+      POSTGRES_DB: oma_id_development
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U oma_id -d oma_id_development"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    shm_size: 128mb
+
+volumes:
+  postgres_data:
