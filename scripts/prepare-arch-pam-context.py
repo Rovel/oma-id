@@ -36,6 +36,7 @@ output = root / '.cache/p0/arch-pam-context.tar.gz'
 with tarfile.open(output, 'w:gz') as context:
     context.add(root / 'tests/arch-pam/Dockerfile', arcname='Dockerfile')
     context.add(root / 'tests/arch-pam/build.sh', arcname='build.sh')
+    context.add(root / 'tests/arch-pam/pam-test-client.c', arcname='pam-test-client.c')
     context.add(archive, arcname='context.tar.gz')
 manifest = {
     'commit': commit,
