@@ -21,7 +21,7 @@ The protocol spike's `tests/interop/Gemfile.lock` records the resolved gem set.
 | Device-grant extension | 1.0.3 | Lab adapter validates scopes and denial; polling/expiry/sequential redemption checked |
 | WebAuthn | 3.4.3 | Resolved; authenticator/recovery tests pending |
 | Omarchy / ISO | `quattro` commits in inventory | Local checkout matches pinned archive; ISO and package manifest unselected |
-| OMA-ID native login | ADR-0004: Rust agent + thin PAM client + local users | Lease core, IPC framing/peer policy, fake root-owned socket service, fail-closed PAM client core, and `pam_oma_id` module core (service mapping, outcome codes, fixed socket path); container build, real libpam load, credential exchange, provisioning and VM PAM evidence pending |
+| OMA-ID native login | ADR-0004: Rust agent + thin PAM client + local users | Lease core, IPC framing/peer policy, fake root-owned socket service, fail-closed PAM client core, `pam_oma_id` module core, and pinned Arch container build of `pam_oma_id.so`; real libpam load, credential exchange, provisioning and VM PAM evidence pending |
 | authd comparison | Captured commit only | Partial Arch build retained as comparative evidence; not a runtime dependency |
 
 Published metadata lists MIT for the captured Ruby gems; Omarchy and ISO root

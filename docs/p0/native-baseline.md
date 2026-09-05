@@ -137,15 +137,39 @@ environment override, because the PAM environment is caller-influenced and
 an overridable path would let a local attacker point the module at an
 always-allowing agent. Unknown PAM services fail closed.
 
-Host-side evidence only: unit tests cover service mapping, outcome
-codes, and the fixed socket path. No container build, no real libpam load,
-no PAM consumer run yet.
+Host-side evidence: unit tests cover service mapping, outcome codes, and
+the fixed socket path.
+
+### Arch container build of pam_oma_id (disposable, pinned)
+
+`tests/arch-pam/` + `scripts/prepare-arch-pam-context.py`: context exported
+from committed tree ffbe03d7e5dbf186c8daec775b1949a8b1c9a0eb (tree
+ccbf52664806b35bee1f65a768c4ef628627f0a6; source tarball sha256
+dd36b78d11c56e5358591cdda7c47181c64ca37ff75549f244b2f9b0b21a28a9), image
+`oma-id-p0-arch-pam:local` sha256:d65d4383… built from the same pinned
+archlinux digest and 2026-09-04 repo snapshot as `tests/arch/`, rustc
+1.98.0 (Arch package). Results in `.cache/p0/arch-pam-out/`:
+`cargo test --locked` → 0 (all 35 tests), `cargo build --locked --release -p
+oma-id-pam-module` → 0, artifact `pam_oma_id.so`
+sha256:0ee4fc362c785298797eb29819653cf4b2f475f8977cdbbefab35ec229ecd1fe
+exporting `pam_sm_auth` and `pam_sm_acct_mgmt`.
+
+Exact failures found by the container run (all fixed, all recorded):
+(1) `$USER` unset under docker failed 8 socket tests → tests now resolve
+the username via `getpwuid(getuid())`; (2) root peer made Sddm/Login pass
+peer policy in the harness → test branches on euid and asserts the lease
+operation-scope denial; (3) the PAM-client denial anchor was
+euid-dependent → re-anchored on Quickshell/Login, denied for every peer.
+
+No real libpam load and no PAM consumer run yet: this is build + suite
+evidence only.
 
 ### Next native slice
 
-Build this module in a disposable Arch container (pinned image, existing
-`tests/arch/` pattern) and exercise the real consumer path — SDDM or
-Quickshell PAM service via libpam — against the fake agent, recording exact
-failures. Then the credential-exchange message type once the authorization
-path is proven in a real consumer. No login gate is claimed by any of the
-above.
+Real libpam consumer path in the same disposable Arch container: a small
+PAM client harness (libpam `pam_start`/`pam_authenticate`) with an
+`/etc/pam.d` service listing `pam_oma_id.so`, run against the fake agent
+daemon on `/run/oma-id/agent.sock`; assert allow/deny/unavailable behavior
+through real libpam and record exact results. Then the credential-exchange
+message type once the authorization path is proven in a real consumer. No
+login gate is claimed by any of the above.
