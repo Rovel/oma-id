@@ -12,6 +12,7 @@ use oma_id_agent_ipc::{
     DenialCode, Operation, PROTOCOL_VERSION, MAX_MESSAGE_BYTES,
 };
 use std::io::{self, Write};
+use std::mem::MaybeUninit;
 use std::os::unix::net::UnixStream;
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -131,8 +132,38 @@ fn wait_for_socket(path: &Path) {
     }
 }
 
+/// Resolve the username from the calling UID. Deliberately not `$USER`:
+/// environment variables are caller-influenced and unset in minimal
+/// containers, while `getpwuid(getuid())` is the authoritative mapping.
 fn current_username() -> String {
-    std::env::var("USER").expect("USER environment variable")
+    use std::ffi::CStr;
+    let uid = unsafe { libc::getuid() };
+    let mut buffer = vec![0_u8; 4096];
+    let mut entry = MaybeUninit::<libc::passwd>::uninit();
+    loop {
+        let mut found: *mut libc::passwd = std::ptr::null_mut();
+        // SAFETY: same contract as the daemon's `local_user_uid` lookup.
+        let status = unsafe {
+            libc::getpwuid_r(
+                uid,
+                entry.as_mut_ptr(),
+                buffer.as_mut_ptr().cast::<libc::c_char>(),
+                buffer.len(),
+                &mut found,
+            )
+        };
+        if status == libc::ERANGE {
+            let next = buffer.len().saturating_mul(2).max(8196);
+            buffer.resize(next, 0);
+            continue;
+        }
+        assert_eq!(status, 0, "getpwuid_r failed");
+        assert!(!found.is_null(), "no passwd entry for uid {uid}");
+        // SAFETY: lookup succeeded; `found` aliases our storage.
+        let entry = unsafe { &*found };
+        let name = unsafe { CStr::from_ptr(entry.pw_name) };
+        return name.to_str().expect("non-UTF8 username").to_string();
+    }
 }
 
 fn request(consumer: Consumer, operation: Operation) -> AuthorizationRequest {
@@ -160,14 +191,26 @@ fn allows_same_user_quickshell_unlock() {
 #[test]
 fn denies_unprivileged_consumer_for_non_root_peer() {
     let service = start_service("peer", Bounds::valid_around(now()));
-    // Sddm/Login is a valid root pair, but this peer is not root.
-    let response = oma_id_agent_ipc::exchange(
-        &service.path,
-        &request(Consumer::Sddm, Operation::Login),
-        Duration::from_secs(2),
-    )
-    .expect("exchange");
-    assert_eq!(response.decision, Decision::Deny(DenialCode::NotAuthorized));
+    if unsafe { libc::geteuid() } == 0 {
+        // Root peer (container): Sddm/Login is a valid root pair under the
+        // valid lease, but Quickshell/Login still violates the operation map.
+        let response = oma_id_agent_ipc::exchange(
+            &service.path,
+            &request(Consumer::Sddm, Operation::Login),
+            Duration::from_secs(2),
+        )
+        .expect("exchange");
+        assert_eq!(response.decision, Decision::Allow);
+    } else {
+        // Sddm/Login is a valid root pair, but this peer is not root.
+        let response = oma_id_agent_ipc::exchange(
+            &service.path,
+            &request(Consumer::Sddm, Operation::Login),
+            Duration::from_secs(2),
+        )
+        .expect("exchange");
+        assert_eq!(response.decision, Decision::Deny(DenialCode::NotAuthorized));
+    }
 
     // Quickshell may only ask for Unlock.
     let response = oma_id_agent_ipc::exchange(
