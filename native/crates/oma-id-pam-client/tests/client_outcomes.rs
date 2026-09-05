@@ -124,12 +124,14 @@ fn authorized_when_agent_allows() {
 fn explicit_denial_is_denied_not_unavailable() {
     let service = start_service("deny");
     let client = Client::new(&service.path, DEFAULT_TIMEOUT);
-    // Valid root-only pair, but this peer is not root: the agent answers an
-    // explicit denial, which the PAM layer reports differently from a dead
-    // agent.
+    // Quickshell may only ask for Unlock, for any peer: the agent answers
+    // an explicit denial, which the PAM layer reports differently from a
+    // dead agent. (Sddm/Login would be environment-dependent: denied by
+    // peer policy for non-root peers but allowed for root under this
+    // lease, so it cannot anchor the assertion.)
     assert_eq!(
         client.authorize(
-            oma_id_agent_ipc::Consumer::Sddm,
+            oma_id_agent_ipc::Consumer::Quickshell,
             oma_id_agent_ipc::Operation::Login,
             &current_username()
         ),
