@@ -24,15 +24,15 @@ static int conv(int num_msg, const struct pam_message **msg,
         return PAM_CONV_ERR;
     }
     /* Answer only echo-off password prompts. */
-    if (msg[0].length != PAM_PROMPT_ECHO_OFF) {
+    if (msg[0]->length != PAM_PROMPT_ECHO_OFF) {
         return PAM_CONV_ERR;
     }
     char *copy = strdup(g_password);
     if (copy == NULL) {
         return PAM_BUF_ERR;
     }
-    resp->resp = copy;
-    resp->resp_len = strlen(copy);
+    (*resp).resp = copy;
+    (*resp).resp_len = strlen(copy);
     return PAM_SUCCESS;
 }
 
