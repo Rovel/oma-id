@@ -7,6 +7,7 @@ use oma_id_agent_daemon::serve;
 use oma_id_agent_ipc::{read_message, write_message, AuthorizationRequest, PROTOCOL_VERSION};
 use oma_id_pam_client::{Client, Outcome, UnavailableReason, DEFAULT_TIMEOUT};
 use std::io::Write;
+use std::mem::MaybeUninit;
 use std::os::unix::net::UnixListener;
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
@@ -71,8 +72,38 @@ fn wait_for_socket(path: &std::path::Path) {
     }
 }
 
+/// Resolve the username from the calling UID. Deliberately not `$USER`:
+/// environment variables are caller-influenced and unset in minimal
+/// containers, while `getpwuid(getuid())` is the authoritative mapping.
 fn current_username() -> String {
-    std::env::var("USER").expect("USER environment variable")
+    use std::ffi::CStr;
+    let uid = unsafe { libc::getuid() };
+    let mut buffer = vec![0_u8; 4096];
+    let mut entry = MaybeUninit::<libc::passwd>::uninit();
+    loop {
+        let mut found: *mut libc::passwd = std::ptr::null_mut();
+        // SAFETY: same contract as the daemon's `local_user_uid` lookup.
+        let status = unsafe {
+            libc::getpwuid_r(
+                uid,
+                entry.as_mut_ptr(),
+                buffer.as_mut_ptr().cast::<libc::c_char>(),
+                buffer.len(),
+                &mut found,
+            )
+        };
+        if status == libc::ERANGE {
+            let next = buffer.len().saturating_mul(2).max(8196);
+            buffer.resize(next, 0);
+            continue;
+        }
+        assert_eq!(status, 0, "getpwuid_r failed");
+        assert!(!found.is_null(), "no passwd entry for uid {uid}");
+        // SAFETY: lookup succeeded; `found` aliases our storage.
+        let entry = unsafe { &*found };
+        let name = unsafe { CStr::from_ptr(entry.pw_name) };
+        return name.to_str().expect("non-UTF8 username").to_string();
+    }
 }
 
 #[test]
