@@ -43,6 +43,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "oma-id-pam-client"
+version = "0.0.1"
+dependencies = [
+ "libc",
+ "oma-id-agent-core",
+ "oma-id-agent-daemon",
+ "oma-id-agent-ipc",
+]
+
+[[package]]
 name = "proc-macro2"
 version = "1.0.107"
 source = "registry+https://github.com/rust-lang/crates.io-index"

@@ -73,8 +73,9 @@ clock rollback relative to the last authenticated server time. Signature parsing
 and verification deliberately remain outside the core until a reviewed format
 and library are pinned.
 
-`mise run p0:agent-core` passes 22 tests (4 core, 9 IPC, 2 daemon unit,
-9 socket integration) on Rust 1.88.0. The workspace has no third-party crates
+`mise run p0:agent-core` passes 31 tests (4 core, 7 IPC, 2 daemon unit,
+9 socket integration, 3 PAM-client unit, 6 PAM-client integration) on
+Rust 1.88.0. The workspace has no third-party crates
 beyond pinned `libc`, `serde` and `serde_json`; `Cargo.lock` is committed as
 reproducible input. Passing these tests establishes only decision semantics,
 framing, peer policy and service mapping — not login enforcement.
@@ -105,9 +106,27 @@ The service runs as the current (non-root) test user, so root-side behavior is
 proven only by unit tests. This is a protocol stand-in: no lease store,
 signature verification, revocation polling or supervision exists yet.
 
+### Thin PAM client core (oma-id-pam-client)
+
+Consumer-side core that `pam_oma_id` will wrap. `Client::authorize(consumer,
+operation, local_username)` drives the real `exchange()` path with a random
+16-byte request id from `/dev/urandom` and maps results to a fail-closed
+`Outcome`: only an explicit `Allow` is `Authorized`; explicit denials are
+`Denied`; daemon-down, timeout, protocol violation (wrong correlation id,
+garbage frames, unsafe PAM usernames rejected before connecting) and missing
+entropy are `Unavailable(reason)`. The PAM layer must treat everything except
+`Authorized` as a block, so a valid local credential can never override an
+expired, revoked, wrong-device or wrong-person lease. Integration tests run
+against the fake service, including lying-agent correlation and garbage-frame
+cases.
+
+This is the Rust client core only: no libpam glue, no credential-exchange
+message type, no PAM stage wiring yet.
+
 ### Next native slice
 
-A thin PAM module stub (or equivalent consumer harness) that drives the real
-`exchange()` client path against this service in a disposable guest, plus the
-credential-exchange message type after the authorization path is proven in a
+Build `pam_oma_id` (libpam FFI over this client) in a disposable Arch
+container/WSL distro and exercise the real consumer path — SDDM or Quickshell
+PAM service — against the agent, recording exact failures. Then the
+credential-exchange message type once the authorization path is proven in a
 real consumer. No login gate is claimed by any of the above.

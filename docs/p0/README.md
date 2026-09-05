@@ -21,7 +21,7 @@ The protocol spike's `tests/interop/Gemfile.lock` records the resolved gem set.
 | Device-grant extension | 1.0.3 | Lab adapter validates scopes and denial; polling/expiry/sequential redemption checked |
 | WebAuthn | 3.4.3 | Resolved; authenticator/recovery tests pending |
 | Omarchy / ISO | `quattro` commits in inventory | Local checkout matches pinned archive; ISO and package manifest unselected |
-| OMA-ID native login | ADR-0004: Rust agent + thin PAM client + local users | Lease core, IPC framing/peer policy, and fake root-owned socket service with fail-closed integration tests; credential exchange, provisioning and VM PAM evidence pending |
+| OMA-ID native login | ADR-0004: Rust agent + thin PAM client + local users | Lease core, IPC framing/peer policy, fake root-owned socket service, and fail-closed PAM client core; libpam glue, credential exchange, provisioning and VM PAM evidence pending |
 | authd comparison | Captured commit only | Partial Arch build retained as comparative evidence; not a runtime dependency |
 
 Published metadata lists MIT for the captured Ruby gems; Omarchy and ISO root
@@ -49,12 +49,14 @@ remain to be reviewed before distributing anything.
   Raw mode preserves the original dependency gaps; no default tests are skipped.
 - Human authentication, enrollment, offline enforcement, and production deployment
   remain unverified.
-- `mise run p0:agent-core` passes 22 Rust tests: lease decision semantics
+- `mise run p0:agent-core` passes 31 Rust tests: lease decision semantics
   (valid use, person/device binding, validity boundaries, clock rollback,
-  revocation epoch, operation scope), IPC framing/peer policy, and the fake
+  revocation epoch, operation scope), IPC framing/peer policy, the fake
   root-owned socket service (malformed frames, daemon-down, timeout, opaque
-  denial mapping). Inputs are already-verified values; parsing, signatures,
-  credentials, PAM, and account provisioning are not implemented yet. See
+  denial mapping), and the thin PAM client core (explicit pass/deny, daemon-
+down, timeout, lying-agent and unsafe-username fail-closed outcomes). Inputs
+  are already-verified values; parsing, signatures, credentials, libpam glue,
+  and account provisioning are not implemented yet. See
   [native-baseline.md](native-baseline.md).
 
 ## Next smallest implementation
@@ -66,8 +68,8 @@ concurrency, rollback and process-independence evidence; production review remai
 In the separate VM workstream, select media/hardware and establish the owned
 agent/PAM → SDDM/Quickshell path using `tests/vm/README.md`.
 
-P0 still needs exact ISO/package pins, agent IPC/credential/provisioning tests,
-the thin PAM client and real SDDM/Quickshell login evidence,
+P0 still needs exact ISO/package pins, agent credential/provisioning tests,
+libpam glue over the thin PAM client core and real SDDM/Quickshell login evidence,
 advisory/transitive license review, failure-state results, and an explicit
 feasible/blocked decision for each critical path.
 
