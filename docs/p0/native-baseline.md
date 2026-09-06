@@ -229,9 +229,52 @@ for this slice): `mise run p0:agent-core` → 45 tests / 0 failures.
 Still no production PAM module install, no daemon lifecycle, no real SDDM;
 no login gate is claimed by any of the above.
 
+### Libpam prompt glue (protocol v2 container evidence)
+
+`oma-id-pam-module` auth stage now runs the full consumer flow: ask the
+conversation for a password (`PAM_PROMPT_ECHO_OFF` via dlsym-resolved
+Linux-PAM extension `pam_prompt`, `<security/pam_ext.h>`), forward it with
+`Client::exchange_credential`, then call `Client::authorize`; the pure
+`authenticate_outcomes(credential, authorization)` decides the PAM code.
+Both decisions are always taken (no short-circuit): a verified credential
+never rescues a lease denial and vice versa — plan 9.1 made executable in
+the container. The C harness conv answers ECHO_OFF prompts from
+`$OMA_TEST_PASSWORD` (unset → `PAM_CONV_ERR`); the module under test never
+reads the environment. Scenario matrix: valid / wrong / expired / down /
+unmapped, with per-scenario `AGENT_PASSWORD` and `CLIENT_PASSWORD`.
+
+Container run: context at commit af57df34017aab4dc96fd9e9b8e151f67cf81f2d
+(tree f746bddb…, source tarball sha256 481bffb1…), image
+`oma-id-p0-arch-pam:local` sha256:93c7b35b…, rustc 1.98.0 (Arch). All 8
+result lines green in `.cache/p0/arch-pam-out/results.tsv`:
+
+cargo-test 0 (46 tests), build-module 0, compile-client 0,
+scenario-valid 0 (`auth:0 acct:0` — correct credential + valid lease pass
+both stages), scenario-wrong 0 (`auth:7`, PAM_AUTH_ERR before the lease is
+consulted), scenario-expired 0 (`auth:7` — correct credential passes the
+exchange, expired lease denied by `authorize`; §9.1 separation proven in
+the container), scenario-down 0 (`auth:4`, PAM_SYSTEM_ERR, agent absent),
+scenario-unmapped 0 (`auth:4`, fail-closed before any prompt).
+Artifacts: `pam_oma_id.so` sha256:220e98d628d81a141fee614272f5d37ba817cf2
+cb83761dfade8bce632639d3e, `pam-test-client`
+sha256:31b6ca92be649e69147f80a4262cf3fac6a43936993c866019d4dc89ef276ece.
+
+Exact failures found by the container runs (all fixed, all recorded):
+(8) conv wrote to `*resp` as if it were a single struct instead of filling
+the allocated array → segfault; (9) hand-written Linux-PAM structs used
+invented field names — 1.7 is `struct pam_message { int msg_style; const
+char *msg; }` and `struct pam_response { char *resp; int resp_retcode; }`;
+(10) `pam_prompt` is the extension API in `<security/pam_ext.h>`
+(`int pam_prompt(pam_handle_t *, int style, char **response, const char
+*fmt, ...)`, libpam allocates the response), not the printf-style helper
+in `pam_misc/pam_prompt.h`.
+
+Still no production PAM module install, no daemon lifecycle, no real SDDM;
+the password in the container matrix is a test fixture, not a credential
+store. No login gate is claimed.
+
 ### Next native slice
 
-libpam prompting glue: `pam_sm_authenticate` asks the conversation for the
-password (`PAM_PROMPT_ECHO_OFF`), forwards it via `exchange_credential`, then
-calls `authorize`; both decisions required to succeed. Then the omarchy-iso
-integration branch per the recorded strategy.
+oma-id GitHub Actions CI (host suite + pinned Arch container build + libpam
+scenario matrix on push), then the omarchy-iso integration branch per the
+recorded strategy.
