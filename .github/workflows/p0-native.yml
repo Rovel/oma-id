@@ -9,10 +9,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
+      # The tag selects the toolchain; this release predates the `toolchain` input.
       - uses: dtolnay/rust-toolchain@1.88.0
-        with:
-          toolchain: "1.88.0"
       # Same command as `mise run p0:agent-core` (locked workspace).
       - name: Run the locked native suite
         run: cargo test --manifest-path native/Cargo.toml --locked
@@ -21,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       # Exports the committed git tree (asserts a clean working tree) and
       # records commit/tree/source hashes in .cache/p0/context-manifest.json.
       - name: Prepare the pinned Arch build context
@@ -59,7 +58,7 @@ jobs:
           sha256sum pam_oma_id.so pam-test-client | tee artifact-hashes.txt
       - name: Upload container evidence
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: arch-pam-evidence
           path: .cache/p0/arch-pam-out/
