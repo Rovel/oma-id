@@ -298,8 +298,39 @@ raced the script's directory creation on a fresh runner → `mkdir -p .cache/p0`
 in the workflow step; (12) node20 action versions + invalid `toolchain` input
 warnings → bumped to node24 majors and dropped the input.
 
+### omarchy-iso integration branch (oma-id-p0-standin)
+
+Cross-fork integration per the recorded strategy: `oma-id-p0-standin` on
+Rovel/omarchy-iso (commit cbfe8b1), pinning oma-id at
+235fe091ee337e294d11cedb810370907eb602a2 (the commit that added
+`tests/iso-smoke/run-smoke.sh`).
+
+- `builder/oma-id-layer.sh` — gated layer: clone oma-id at `OMA_ID_SHA`,
+  `cargo build --locked --release` (module + daemon), compile the C client,
+  install `pam_oma_id.so` → `/usr/lib/security/`, harness + smoke under
+  `/opt/oma-id/`, plus a `PROVENANCE` file (repo, SHA, subject, rustc,
+  artifact sha256s). `builder/build-iso.sh` is untouched unless `OMA_ID_SHA`
+  is set; **no PAM service on the ISO is modified** — the smoke script uses
+  `omarchy-lock-password` (Quickshell/Unlock) as the mapped service so the
+  real `sddm` entry is never touched, backs up any pre-existing file, and
+  cleans up on exit.
+- Smoke matrix (5 scenarios, real libpam, installed paths) runs two ways:
+  locally pre-verified via docker cp (archlinux:latest digest sha256:82b1b08…
+  — same pinned base as the P0 container — rustc 1.98.1, all lines green,
+  exit 0) and in omarchy-iso Actions run 34049213475 (push of cbfe8b1):
+  `packaging-smoke` job green, zero annotations, provenance artifact uploaded.
+  `iso-build` correctly skipped on push (manual-dispatch only).
+- oma-id CI also re-verified the pin commit: run 34048770222 green (46 tests).
+- Full ISO build with the layer embedded: dispatched manually (run
+  34049456445, 2026-09-06). Container ≠ desktop VM: even a green ISO build
+  is packaging evidence, not a login-gate pass — the live-environment
+  smoke (`bash /opt/oma-id/run-smoke.sh`) is the consumer-path test, and a
+  booted-ISO VM run remains future work.
+
 ### Next native slice
 
-omarchy-iso integration branch per the recorded strategy (disposable-layer
-packaging of `pam_oma_id` + fake agent in the ISO build, VM/container smoke
-test in omarchy-iso Actions; oma-id is not on crates.io → git-pin at a SHA).
+Confirm the full ISO build run (34049456445) completes and the layer lands in
+the airootfs (upload + boot the ISO artifact, run `/opt/oma-id/run-smoke.sh`
+in the live environment, ideally in the omarchy-iso VM). Then the next native
+slice returns to the agent side: lease store / trust-chain groundwork per
+oma-id_plan.md.
