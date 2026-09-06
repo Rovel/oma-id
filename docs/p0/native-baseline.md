@@ -273,8 +273,33 @@ Still no production PAM module install, no daemon lifecycle, no real SDDM;
 the password in the container matrix is a test fixture, not a credential
 store. No login gate is claimed.
 
+### oma-id GitHub Actions CI (on push)
+
+`.github/workflows/p0-native.yml`, two jobs:
+
+1. `native-suite` — Rust 1.88.0, `cargo test --manifest-path native/Cargo.toml --locked`
+   (same command as `mise run p0:agent-core`).
+2. `arch-pam-container` — `scripts/prepare-arch-pam-context.py` (asserts clean
+   tree, records commit/tree/source hashes) → docker build of the pinned Arch
+   image → `docker run -d` + `docker wait` (build.sh exits nonzero on any
+   failed step) → copy `/out/.` out → verify all 8 result lines are exactly
+   `<step>\t0` and that the line count is 8 → record image digest + artifact
+   sha256s → upload `.cache/p0/arch-pam-out/` as `arch-pam-evidence`
+   (`if: always()`).
+
+Actions: `actions/checkout@v7`, `actions/upload-artifact@v7` (node24),
+`dtolnay/rust-toolchain@1.88.0` (the tag selects the toolchain; that release
+predates the `toolchain` input — do not add a `with:` block).
+
+First verified run: push of 7e7a8e6…/f81451a, run 34031972926 (2026-09-06):
+both jobs success, zero annotations, artifact `arch-pam-evidence` uploaded.
+Failures found and fixed by CI itself: (11) `tee .cache/p0/context-manifest.json`
+raced the script's directory creation on a fresh runner → `mkdir -p .cache/p0`
+in the workflow step; (12) node20 action versions + invalid `toolchain` input
+warnings → bumped to node24 majors and dropped the input.
+
 ### Next native slice
 
-oma-id GitHub Actions CI (host suite + pinned Arch container build + libpam
-scenario matrix on push), then the omarchy-iso integration branch per the
-recorded strategy.
+omarchy-iso integration branch per the recorded strategy (disposable-layer
+packaging of `pam_oma_id` + fake agent in the ISO build, VM/container smoke
+test in omarchy-iso Actions; oma-id is not on crates.io → git-pin at a SHA).
