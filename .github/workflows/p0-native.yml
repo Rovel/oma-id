@@ -1,0 +1,62 @@
+name: p0-native
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  native-suite:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.88.0
+        with:
+          toolchain: "1.88.0"
+      # Same command as `mise run p0:agent-core` (locked workspace).
+      - name: Run the locked native suite
+        run: cargo test --manifest-path native/Cargo.toml --locked
+
+  arch-pam-container:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      # Exports the committed git tree (asserts a clean working tree) and
+      # records commit/tree/source hashes in .cache/p0/context-manifest.json.
+      - name: Prepare the pinned Arch build context
+        run: python3 scripts/prepare-arch-pam-context.py | tee .cache/p0/context-manifest.json
+      - name: Build the disposable Arch image
+        run: docker build --progress plain --load -t oma-id-p0-arch-pam:ci - < .cache/p0/arch-pam-context.tar.gz
+      # build.sh exits nonzero on any failed step; docker wait propagates it.
+      - name: Run the libpam scenario matrix
+        run: |
+          set -euo pipefail
+          docker rm -f oma-pam-run >/dev/null 2>&1 || true
+          docker run -d --name oma-pam-run oma-id-p0-arch-pam:ci
+          timeout 1800 docker wait oma-pam-run
+      # Docker bind mounts from WSL do not sync; the runner is fine, but keep
+      # the same copy-out pattern as the local evidence runs.
+      - name: Copy results out of the container
+        run: |
+          set -euo pipefail
+          mkdir -p .cache/p0/arch-pam-out
+          docker cp oma-pam-run:/out/. .cache/p0/arch-pam-out/
+      - name: Verify all scenario lines are green
+        run: |
+          set -euo pipefail
+          cd .cache/p0/arch-pam-out
+          expected="cargo-test build-module compile-client scenario-valid scenario-wrong scenario-expired scenario-down scenario-unmapped"
+          for name in $expected; do
+            awk -F'\t' -v n="$name" '$1==n && $2=="0" {found=1} END {exit !found}' results.tsv \
+              || { echo "missing or failing line: $name"; cat results.tsv; exit 1; }
+          done
+          [ "$(wc -l < results.tsv)" -eq 8 ]
+          docker image inspect --format '{{.Id}}' oma-id-p0-arch-pam:ci | tee image-digest.txt
+          sha256sum pam_oma_id.so pam-test-client | tee artifact-hashes.txt
+      - name: Upload container evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: arch-pam-evidence
+          path: .cache/p0/arch-pam-out/
