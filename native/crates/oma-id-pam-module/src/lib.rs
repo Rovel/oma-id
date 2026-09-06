@@ -206,11 +206,21 @@ unsafe fn read_items(lib: *mut c_void, handle: PamHandle) -> Result<PamItems, c_
 }
 
 /// Ask the conversation for the user's password with echo off, via a
-/// runtime-resolved `pam_prompt`. The response string is copied out and
-/// freed — libpam leaves ownership with us. Any non-success from libpam is
-/// returned as-is so a user abort stays an abort.
+/// runtime-resolved `pam_prompt` (Linux-PAM extension API, declared in
+/// `<security/pam_ext.h>`):
+/// `int pam_prompt(pam_handle_t *, int style, char **response, const char *fmt, ...)`.
+/// libpam allocates the response string and we free it once. Any non-success
+/// from libpam is returned as-is so a user abort stays an abort.
 unsafe fn prompt_password(lib: *mut c_void, handle: PamHandle) -> Result<String, c_int> {
-    type PamPrompt = unsafe extern "C" fn(*mut c_void, c_int, *const c_char, *mut c_void) -> c_int;
+    // The C symbol is variadic; we call it with exactly these four fixed
+    // arguments and no variadic tail (all register-passed on x86-64/AArch64),
+    // which is the same dlsym+transmute pattern used for `pam_get_item`.
+    type PamPrompt = unsafe extern "C" fn(
+        *mut c_void,
+        c_int,
+        *mut *mut c_char,
+        *const c_char,
+    ) -> c_int;
     // SAFETY: `lib` is a live dlopen handle; the symbol name is NUL-terminated.
     let sym = unsafe { libc::dlsym(lib, b"pam_prompt\0".as_ptr().cast::<c_char>()) };
     if sym.is_null() {
@@ -220,14 +230,15 @@ unsafe fn prompt_password(lib: *mut c_void, handle: PamHandle) -> Result<String,
     // result into that function-pointer type preserves provenance.
     let prompt = unsafe { std::mem::transmute::<*mut c_void, PamPrompt>(sym) };
     let mut response: *mut c_char = ptr::null_mut();
-    // SAFETY: `handle` is the live PAM handle; `&mut response` is passed as
-    // the `char **` auxiliary argument that `pam_prompt` fills in.
+    // SAFETY: `handle` is the live PAM handle; `&mut response` is the
+    // `char **response` out-parameter that libpam fills with an allocated,
+    // NUL-terminated string.
     let rc = unsafe {
         prompt(
             handle,
             PAM_PROMPT_ECHO_OFF,
+            &mut response,
             b"Password:\0".as_ptr().cast::<c_char>(),
-            &mut response as *mut *mut c_char as *mut c_void,
         )
     };
     if rc != PAM_SUCCESS {
@@ -238,8 +249,9 @@ unsafe fn prompt_password(lib: *mut c_void, handle: PamHandle) -> Result<String,
     }
     // SAFETY: libpam guarantees a NUL-terminated response for prompt items.
     let bytes = unsafe { CStr::from_ptr(response) }.to_bytes().to_vec();
-    // SAFETY: `response` is heap-allocated by the conversation and owned by
-    // us from this point on.
+    // SAFETY: libpam allocated `response` (strdup of the conversation's
+    // answer) and hands ownership to us; freed exactly once, verified
+    // against a C driver in the Arch container.
     unsafe { libc::free(response as *mut c_void) };
     String::from_utf8(bytes).map_err(|_| PAM_BUF_ERR)
 }
