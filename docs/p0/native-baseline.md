@@ -321,16 +321,20 @@ Rovel/omarchy-iso (commit cbfe8b1), pinning oma-id at
   `packaging-smoke` job green, zero annotations, provenance artifact uploaded.
   `iso-build` correctly skipped on push (manual-dispatch only).
 - oma-id CI also re-verified the pin commit: run 34048770222 green (46 tests).
-- Full ISO build with the layer embedded: dispatched manually (run
-  34049456445, 2026-09-06). Container ≠ desktop VM: even a green ISO build
-  is packaging evidence, not a login-gate pass — the live-environment
-  smoke (`bash /opt/oma-id/run-smoke.sh`) is the consumer-path test, and a
-  booted-ISO VM run remains future work.
+- Full ISO build with the layer embedded: run 34049456445 (manual dispatch,
+  2026-09-06) — `oma-id layer installed at 235fe091…` appears in the iso-build
+  log before `mkarchiso Done!`; ISO `omarchy-2026.09.06-x86_64.iso` (7.4G)
+  produced and uploaded as the `omarchy-iso-oma-id-p0` artifact (retention
+  14 days). Log-based packaging evidence only — the squashfs contents were not
+  independently inspected. Container ≠ desktop VM: even a green ISO build is
+  packaging evidence, not a login-gate pass — the live-environment smoke
+  (`bash /opt/oma-id/run-smoke.sh`) has passed in containers, and a booted-ISO
+  VM run remains future work.
 
 ### Next native slice
 
-Confirm the full ISO build run (34049456445) completes and the layer lands in
-the airootfs (upload + boot the ISO artifact, run `/opt/oma-id/run-smoke.sh`
-in the live environment, ideally in the omarchy-iso VM). Then the next native
+Boot the built ISO artifact (run 34049456445, `omarchy-iso-oma-id-p0`) in the
+omarchy-iso VM and run `/opt/oma-id/run-smoke.sh` in the live environment —
+the one remaining consumer-path gap for the stand-in. Then the next native
 slice returns to the agent side: lease store / trust-chain groundwork per
 oma-id_plan.md.
