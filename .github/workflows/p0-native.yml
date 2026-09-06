@@ -25,7 +25,10 @@ jobs:
       # Exports the committed git tree (asserts a clean working tree) and
       # records commit/tree/source hashes in .cache/p0/context-manifest.json.
       - name: Prepare the pinned Arch build context
-        run: python3 scripts/prepare-arch-pam-context.py | tee .cache/p0/context-manifest.json
+        run: |
+          set -euo pipefail
+          mkdir -p .cache/p0
+          python3 scripts/prepare-arch-pam-context.py | tee .cache/p0/context-manifest.json
       - name: Build the disposable Arch image
         run: docker build --progress plain --load -t oma-id-p0-arch-pam:ci - < .cache/p0/arch-pam-context.tar.gz
       # build.sh exits nonzero on any failed step; docker wait propagates it.
