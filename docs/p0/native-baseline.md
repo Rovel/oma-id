@@ -321,20 +321,56 @@ Rovel/omarchy-iso (commit cbfe8b1), pinning oma-id at
   `packaging-smoke` job green, zero annotations, provenance artifact uploaded.
   `iso-build` correctly skipped on push (manual-dispatch only).
 - oma-id CI also re-verified the pin commit: run 34048770222 green (46 tests).
-- Full ISO build with the layer embedded: run 34049456445 (manual dispatch,
-  2026-09-06) — `oma-id layer installed at 235fe091…` appears in the iso-build
-  log before `mkarchiso Done!`; ISO `omarchy-2026.09.06-x86_64.iso` (7.4G)
-  produced and uploaded as the `omarchy-iso-oma-id-p0` artifact (retention
-  14 days). Log-based packaging evidence only — the squashfs contents were not
-  independently inspected. Container ≠ desktop VM: even a green ISO build is
-  packaging evidence, not a login-gate pass — the live-environment smoke
-  (`bash /opt/oma-id/run-smoke.sh`) has passed in containers, and a booted-ISO
-  VM run remains future work.
+- Full ISO build with the layer embedded: first verified green in run
+  34049456445 (7.4G ISO uploaded). Log-based packaging evidence only — the
+  squashfs was never independently inspected.
+
+#### Incident + policy: artifact verification stays in CI
+
+An attempt to verify the downloaded ISO artifact locally (7.9G zip →
+7.4G ISO → squashfs extraction) exhausted the Windows host disk and
+  crashed the machine: WSL2 vhdx files grow dynamically as Linux writes,
+  so `df` inside WSL is meaningless for host-disk risk. Policy from here:
+  heavy artifact handling (multi-GB extraction, chroot verification) runs
+  only on disposable CI runner disks or non-system disks; locally, at most
+  `gh run download` for a USB burn.
+
+#### CI smoke on the installed live root (runs 34072614610 → 34074550877)
+
+The ISO build job now runs the smoke **inside the build** via mkarchiso's
+`customize_airootfs.sh` hook: mkarchiso installs the package set into its
+work dir, overlays the layer files, then executes the hook via arch-chroot
+in the fully installed live root, then deletes it. Gated by
+`/opt/oma-id/.smoke-on-build` (`OMA_ID_SMOKE=1`) so plain layer builds stay
+passive. `packaging-smoke` (every push) runs the matrix under **both**
+bash and zsh — the Omarchy live root ships zsh as the live shell.
+
+Failures found by CI in this iteration (all fixed, all recorded):
+(13) the pre-mkarchiso `airootfs/` dir holds only customization files — the
+OS is installed later inside mkarchiso's work dir, so a direct chroot there
+found no shell at all; fixed by moving to the customize_airootfs hook.
+(14) zsh has a read-only special variable `$status` — `local status` in the
+smoke's `record()` aborted under zsh; renamed to `rc` (oma-id a5bc3c9).
+(15) mkarchiso copies custom airootfs files with `cp --no-preserve=mode`
+and only restores modes declared in the profile's `file_permissions` map —
+the layer's binaries landed non-executable ("permission denied:
+pam-test-client", fake_agent never bound); fixed by appending
+`file_permissions+=(…)` to the working profiledef copy when OMA_ID_SHA is
+set. Note: mkarchiso warns that customize_airootfs.sh is deprecated — if a
+future archiso removes it, this hook needs a replacement.
+
+Final verified state (run 34074550877, 2026-09-07, both jobs green): the
+hook log shows all 5 scenarios with correct expected/actual codes
+(`valid 0/0`, `wrong 7`, `expired 7`, `unmapped 4`, `down 4`) on the
+installed live root, `oma-id smoke passed on the installed live root`,
+mkarchiso Done, ISO artifact uploaded. This is the shipped airootfs
+content, verified without touching any local disk.
 
 ### Next native slice
 
-Boot the built ISO artifact (run 34049456445, `omarchy-iso-oma-id-p0`) in the
-omarchy-iso VM and run `/opt/oma-id/run-smoke.sh` in the live environment —
-the one remaining consumer-path gap for the stand-in. Then the next native
-slice returns to the agent side: lease store / trust-chain groundwork per
-oma-id_plan.md.
+Burn the verified ISO artifact (run 34074550877, `omarchy-iso-oma-id-p0`) to
+USB, boot a real machine into the live environment, and run
+`bash /opt/oma-id/run-smoke.sh` (or `zsh …` — the live root is zsh-first) —
+the one remaining consumer-path gap for the stand-in; a booted machine is
+not a container. Then the next native slice returns to the agent side:
+lease store / trust-chain groundwork per oma-id_plan.md.
