@@ -31,6 +31,13 @@ remain to be reviewed before distributing anything.
 
 ## Checks and limitations
 
+- P0 server slice executed (2026-09-07): `server/` Rails 8.1.3.1 identity
+  front on Ruby 4.0.6 with Phlex/RubyUI and the `Organization` model; public
+  `/.well-known/oma-enrollment` metadata (plan §11.4); 6 tests / 29
+  assertions / 0 failures locally; verified reachable over the LAN
+  (`mise run server:up`). No authentication or OIDC on this server yet —
+  see `docs/p0/server-baseline.md`.
+
 - Source capture completed for ten repositories and eight gem metadata records.
 - Local mise reports Ruby 4.0.6 and Bundler 4.0.16.
 - `bundle lock` resolves the selected Rails/OIDC/UI dependencies on Ruby 4.
