@@ -66,9 +66,10 @@ wait_for_socket() {
   [ -S "$SOCKET" ]
 }
 record() {
-  local name="$1" status="$2"
-  printf '%s\t%s\n' "$name" "$status" >>"$results"
-  if [ "$status" -eq 0 ]; then echo "$name: ok"; else echo "$name: MISMATCH"; fi
+  # NB: do not name this variable "status" — read-only special in zsh.
+  local name="$1" rc="$2"
+  printf '%s\t%s\n' "$name" "$rc" >>"$results"
+  if [ "$rc" -eq 0 ]; then echo "$name: ok"; else echo "$name: MISMATCH"; fi
 }
 scenario() {
   local name="$1" expected="$2" service="$3"; shift 3
