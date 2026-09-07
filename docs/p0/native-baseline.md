@@ -143,7 +143,7 @@ the fixed socket path.
 ### Arch container build of pam_oma_id (disposable, pinned)
 
 `tests/arch-pam/` + `scripts/prepare-arch-pam-context.py`: context exported
-from committed tree ffbe03d7e5dbf186c8daec775b1949a8b1c9a0eb (tree
+from committed tree 56e1ac69c0db807a373c7dda9b41079937b7ed38 (tree
 ccbf52664806b35bee1f65a768c4ef628627f0a6; source tarball sha256
 dd36b78d11c56e5358591cdda7c47181c64ca37ff75549f244b2f9b0b21a28a9), image
 `oma-id-p0-arch-pam:local` sha256:d65d4383… built from the same pinned
@@ -163,7 +163,7 @@ euid-dependent → re-anchored on Quickshell/Login, denied for every peer.
 
 ### Real libpam consumer run (disposable, pinned)
 
-Same pipeline, context at commit db8764698 (tree d508a992…, source
+Same pipeline, context at commit cfaefb2ea (tree d508a992…, source
 tarball sha256 e73f7086…), image `oma-id-p0-arch-pam:local`
 sha256:933b58ab…, rustc 1.98.0 (Arch). `tests/arch-pam/pam-test-client.c`
 is a minimal libpam client (`pam_start`/`pam_authenticate`/
@@ -242,7 +242,7 @@ the container. The C harness conv answers ECHO_OFF prompts from
 reads the environment. Scenario matrix: valid / wrong / expired / down /
 unmapped, with per-scenario `AGENT_PASSWORD` and `CLIENT_PASSWORD`.
 
-Container run: context at commit af57df34017aab4dc96fd9e9b8e151f67cf81f2d
+Container run: context at commit 257e0f61a0010c9c29efeb08d1e913c90cd8c65e
 (tree f746bddb…, source tarball sha256 481bffb1…), image
 `oma-id-p0-arch-pam:local` sha256:93c7b35b…, rustc 1.98.0 (Arch). All 8
 result lines green in `.cache/p0/arch-pam-out/results.tsv`:
@@ -290,7 +290,7 @@ Actions: `actions/checkout@v7`, `actions/upload-artifact@v7` (node24),
 `dtolnay/rust-toolchain@1.88.0` (the tag selects the toolchain; that release
 predates the `toolchain` input — do not add a `with:` block).
 
-First verified run: push of 7e7a8e6…/f81451a, run 34031972926 (2026-09-06):
+First verified run: push of 72ecce6…/e840f0a, run 34031972926 (2026-09-06):
 both jobs success, zero annotations, artifact `arch-pam-evidence` uploaded.
 Failures found and fixed by CI itself: (11) `tee .cache/p0/context-manifest.json`
 raced the script's directory creation on a fresh runner → `mkdir -p .cache/p0`
@@ -301,7 +301,7 @@ warnings → bumped to node24 majors and dropped the input.
 
 Cross-fork integration per the recorded strategy: `oma-id-p0-standin` on
 Rovel/omarchy-iso (commit cbfe8b1), pinning oma-id at
-235fe091ee337e294d11cedb810370907eb602a2 (the commit that added
+595bcc3d656bb9b7b3e24544a3156fa4ffb95a28 (the commit that added
 `tests/iso-smoke/run-smoke.sh`).
 
 - `builder/oma-id-layer.sh` — gated layer: clone oma-id at `OMA_ID_SHA`,
@@ -349,7 +349,7 @@ Failures found by CI in this iteration (all fixed, all recorded):
 OS is installed later inside mkarchiso's work dir, so a direct chroot there
 found no shell at all; fixed by moving to the customize_airootfs hook.
 (14) zsh has a read-only special variable `$status` — `local status` in the
-smoke's `record()` aborted under zsh; renamed to `rc` (oma-id a5bc3c9).
+smoke's `record()` aborted under zsh; renamed to `rc` (oma-id 3d90a2b).
 (15) mkarchiso copies custom airootfs files with `cp --no-preserve=mode`
 and only restores modes declared in the profile's `file_permissions` map —
 the layer's binaries landed non-executable ("permission denied:
