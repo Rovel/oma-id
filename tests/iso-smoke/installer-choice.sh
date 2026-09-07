@@ -3,13 +3,16 @@
 # Plan §6.1/§6.2/§6.4, wired per §11.4 metadata:
 #   - "How will this computer be used?" Personal use (default) / School / work.
 #   - Personal: no server contact, the normal install continues untouched.
-#   - School / work: ask for the OMA-ID server URL, fetch the public
-#     enrollment metadata, and display the organization confirmation
-#     (name, canonical issuer, support contact, requested origin — the user
-#     compares what they typed against what the server claims).
+#   - School / work: ensure network (ethernet is automatic; Wi-Fi via iwctl),
+#     ask for the OMA-ID server URL, fetch the public enrollment metadata,
+#     and display the organization confirmation (name, canonical issuer,
+#     support contact, requested origin — the user compares what they typed
+#     against what the server claims).
 #   - P0 lab slice: no enrollment protocol exists yet (P2). A work/school
 #     choice must NEVER silently fall back to personal (§6.4): the user
 #     explicitly chooses to continue as personal or aborts.
+# Visual language matches the other configurator steps: the Omarchy logo via
+# gum (clear_logo replica) with the same padding and colors.
 # Runs under the live root's bash via the configurator, but stays in the
 # bash/zsh-shared subset (no arrays, no PIPESTATUS, no variable named
 # "status" — it is read-only in zsh).
@@ -18,11 +21,76 @@ set -uo pipefail
 METADATA_PATH="/.well-known/oma-enrollment"
 CHOICE_DIR="/run/oma-id"
 CHOICE_FILE="$CHOICE_DIR/standin-choice.json"
+OMA_LOGO="${OMARCHY_PATH:-/root/omarchy}/logo.txt"
+
+# --- visual language (replica of the omarchy installer helpers) ---
+measure_terminal() {
+  TERM_WIDTH=${COLUMNS:-$(tput cols 2>/dev/null || echo 80)}
+  LOGO_WIDTH=$(awk '{ if (length > max) max = length } END { print max+0 }' "$OMA_LOGO" 2>/dev/null || echo 0)
+  PADDING_LEFT=$(((TERM_WIDTH - LOGO_WIDTH) / 2))
+  if [[ $PADDING_LEFT -lt 0 ]]; then PADDING_LEFT=0; fi
+}
+
+clear_logo() {
+  measure_terminal
+  printf "\033[H\033[2J"
+  if [[ -f "$OMA_LOGO" ]]; then
+    gum style --foreground 2 --padding "1 0 0 $PADDING_LEFT" "$(<"$OMA_LOGO")"
+  else
+    # No logo in this environment (CI/headless): plain header, same padding.
+    gum style --foreground 2 --padding "1 0 0 $PADDING_LEFT" "OMA-ID"
+  fi
+}
+
+step() {
+  clear_logo
+  echo
+  gum style --padding "0 0 0 $PADDING_LEFT" "$1"
+  echo
+}
+
+say() {
+  gum style --padding "0 0 0 $PADDING_LEFT" "$@"
+}
 
 abort_choice() {
-  echo "oma-id: ${1:-aborted}"
-  echo "Nothing was enrolled and no settings were changed."
+  step "oma-id: ${1:-aborted}"
+  say "Nothing was enrolled and no settings were changed."
+  say "You can retry later by restarting the installer."
   exit 1
+}
+
+# --- connectivity ---
+have_route() {
+  ip route show default 2>/dev/null | grep -q default
+}
+
+# ensure_network — live-only path: the work/school flow needs connectivity.
+# Ethernet is configured automatically on the live ISO when a cable is
+# connected; Wi-Fi goes through iwctl (iwd ships on the ISO).
+ensure_network() {
+  if have_route; then
+    return 0
+  fi
+  step "Network connection needed"
+  say "Reaching the OMA-ID server requires a network connection."
+  say "Ethernet is configured automatically when a cable is connected."
+  say "For Wi-Fi, connect with iwctl, then quit it (Ctrl+D) to continue."
+  echo
+  while true; do
+    action=$(printf 'Wi-Fi (iwctl)\nRetry detection\n' |
+      gum choose --header "Set up the network") || abort_choice "network setup cancelled"
+    if [[ "$action" == "Wi-Fi (iwctl)" ]]; then
+      clear_logo
+      iwctl
+    fi
+    if have_route; then
+      step "Network connected"
+      return 0
+    fi
+    say "No default route yet."
+    echo
+  done
 }
 
 # validate <url> — headless path (CI-testable): fetch the metadata, check the
@@ -71,39 +139,44 @@ save_choice() {
   mkdir -p "$CHOICE_DIR"
   jq -n --arg mode "$mode" --arg server "$server" --arg note "$note" \
     '{mode: $mode, server: $server, note: $note}' >"$CHOICE_FILE"
-  echo "oma-id: recorded $CHOICE_FILE (live environment only; not installed to disk)"
+  say "Recorded $CHOICE_FILE (live environment only; not installed to disk)."
 }
 
 interactive() {
   local mode url
+  step "Let's set up your machine..."
   mode=$(printf 'Personal use\nSchool / work\n' |
     gum choose --header "How will this computer be used?") || abort_choice
 
   if [[ "$mode" == "Personal use" ]]; then
     save_choice "personal" "" "personal install selected; no OMA-ID server contact"
-    echo "oma-id: personal install — continuing the standard setup."
+    say "Personal install — continuing the standard setup."
     return 0
   fi
 
   # School / work: identify the OMA-ID server (§6.2).
+  ensure_network
+  step "Connect to your organization"
+  say "Enter the OMA-ID server address exactly as given by your organization."
+  echo
   while true; do
     url=$(gum input --placeholder "https://id.example.org" --prompt "OMA-ID server> ") || abort_choice
     if validate "$url"; then
       break
     fi
-    echo "oma-id: retry, or Ctrl+C to abort"
+    say "Could not validate that server. Retry, or Ctrl+C to abort."
     echo
   done
 
   # Honest P0 boundary: validation is all this slice can do. Never a silent
   # personal fallback (§6.4) — the user decides explicitly.
   echo
-  echo "oma-id: this P0 slice has validated the server connection only."
-  echo "oma-id: enrollment activation arrives with the Phase-2 protocol; nothing is enrolled yet."
+  say "This P0 slice has validated the server connection only."
+  say "Enrollment activation arrives with the Phase-2 protocol; nothing is enrolled yet."
   echo
-  if gum confirm "Continue with a PERSONAL install for now?"; then
+  if gum confirm --padding "0 0 0 $PADDING_LEFT" "Continue with a PERSONAL install for now?"; then
     save_choice "work-school" "$url" "validated; enrollment activation pending P2; personal install continued by explicit user choice"
-    echo "oma-id: continuing the standard setup (personal)."
+    say "Continuing the standard setup (personal)."
     return 0
   fi
   abort_choice "work/school selected but enrollment activation is not available on this image."
@@ -114,11 +187,15 @@ case "${1:-}" in
     [[ -n "${2:-}" ]] || { echo "usage: $0 validate <server-url>" >&2; exit 2; }
     validate "$2"
     ;;
+  check-network)
+    # CI-testable connectivity probe: exit 0 when a default route exists.
+    have_route
+    ;;
   "")
     interactive
     ;;
   *)
-    echo "usage: $0 [validate <server-url>]" >&2
+    echo "usage: $0 [validate <server-url>] [check-network]" >&2
     exit 2
     ;;
 esac
