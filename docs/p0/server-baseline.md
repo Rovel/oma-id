@@ -78,7 +78,18 @@ origin `http://host.docker.internal:3000` shown against canonical issuer
 `http://192.168.1.10:3000` — the §6.2 comparison, live); wrong-protocol
 metadata, truncated JSON, unreachable server, and invalid origin all
 rejected with nonzero exits. CI contract tests run in omarchy-iso
-`packaging-smoke` on every push.
+`packaging-smoke` on every push (green run 34084486375: bash+zsh smoke
+matrices, valid/wrong-protocol/unreachable/invalid-origin validate cases,
+zsh compat). Configurator integration: gated three-line STEP 0 block in
+`configs/airootfs/root/configurator` (ADR-006: personal builds byte-
+identical). CI-found failures while wiring the selector (all fixed, all
+recorded): (16) `archlinux:latest` ships no python3 — the metadata stub
+servers never bound; install it explicitly. (17) `grep -q` closes the pipe
+on first match, so `validate | grep -q` under `pipefail` turns validate's
+SIGPIPE into a false failure — capture the output before grepping.
+(18) a fresh `archlinux:latest` pull on a runner had no initialized pacman
+keyring — `pacman-key --init` explicitly. (19) jq/curl are ISO-native but
+absent in the bare CI container — install them for the contract tests.
 
 ## Boundaries and remaining work
 
