@@ -368,12 +368,11 @@ content, verified without touching any local disk.
 
 ### Next native slice
 
-Booted-hardware smoke: DONE (owner-executed on the burnt machine,
-2026-09-07 — all green; see docs/p0/server-baseline.md). The stand-in's
-consumer-path evidence is complete. The installer work/school selector
-(`tests/iso-smoke/installer-choice.sh`, oma-id a38d536) is wired into the
-omarchy-iso configurator behind the layer gate; its CI contract tests run
-in omarchy-iso packaging-smoke. Next: burn the rebuilt ISO and exercise the
-selector against the lab Rails server on the LAN (browser + validate
-display), then return to the agent side — lease store / trust-chain
-groundwork per oma-id_plan.md.
+Selector end-to-end on the burnt machine: DONE (owner-executed 2026-09-07,
+all green — see docs/p0/server-baseline.md). The §6.1/§6.2 consumer path is
+proven end to end: burnt ISO → ownership choice → server validation →
+Rails identity front. Remaining P0/P1 boundary work: LAN reachability from
+other devices needs a one-time Windows Hyper-V/firewall allow (WSL mirrored
+networking; commands recorded in docs/p0/server-baseline.md), then the
+Rails identity foundation (people, admin bootstrap, authentication) and
+agent-side lease store / trust-chain groundwork per oma-id_plan.md.
