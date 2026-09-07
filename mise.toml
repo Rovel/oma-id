@@ -38,3 +38,19 @@ run = "docker compose stop postgres"
 [tasks."p0:agent-core"]
 description = "Test the privilege-free OMA-ID authorization lease core"
 run = "cargo test --manifest-path native/Cargo.toml --locked"
+
+[tasks."server:install"]
+description = "Install the server bundle into the shared local cache"
+run = "BUNDLE_GEMFILE=$PWD/server/Gemfile BUNDLE_PATH=$PWD/.cache/bundle BUNDLE_USER_HOME=$PWD/.cache/bundler bundle install"
+
+[tasks."server:prepare"]
+description = "Prepare and seed the server database (OMA_ID_ISSUER sets the lab issuer on first seed)"
+run = "cd server && BUNDLE_PATH=$PWD/../.cache/bundle BUNDLE_USER_HOME=$PWD/../.cache/bundler bin/rails db:prepare && BUNDLE_PATH=$PWD/../.cache/bundle BUNDLE_USER_HOME=$PWD/../.cache/bundler bin/rails db:seed"
+
+[tasks."server:test"]
+description = "Run the server test suite against the Compose PostgreSQL"
+run = "cd server && BUNDLE_PATH=$PWD/../.cache/bundle BUNDLE_USER_HOME=$PWD/../.cache/bundler bin/rails test"
+
+[tasks."server:up"]
+description = "Serve the P0 identity front on all interfaces (LAN lab exposure; HTTP, development only)"
+run = "cd server && BUNDLE_PATH=$PWD/../.cache/bundle BUNDLE_USER_HOME=$PWD/../.cache/bundler bin/rails server -b 0.0.0.0 -p 3000"

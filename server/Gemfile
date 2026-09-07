@@ -1,0 +1,50 @@
+source "https://rubygems.org"
+
+ruby "4.0.6"
+
+# Pinned to the recorded P0 baseline (docs/p0/baseline.json, tests/interop/Gemfile.lock).
+# P0 lab slice: identity front + public enrollment metadata only. Doorkeeper/OIDC
+# stays in the in-process harness (tests/interop) until P2 interop.
+gem "rails", "8.1.3.1"
+# The modern asset pipeline for Rails [https://github.com/rails/propshaft]
+gem "propshaft"
+# Use postgresql as the database for Active Record
+gem "pg", "~> 1.6"
+# Use the Puma web server [https://github.com/rails/puma/puma]
+gem "puma", ">= 5.0"
+
+# Server-rendered UI: Phlex + phlex-rails + RubyUI (ADR-001, docs/adr/0002)
+gem "phlex", "2.4.1"
+gem "phlex-rails", "2.4.0"
+gem "ruby_ui", "1.6.0"
+
+# Use Active Model has_secure_password [https://guides.rubyonrails.org/active_model_basics.html#securepassword]
+# gem "bcrypt", "~> 3.1.7"
+
+# Windows does not include zoneinfo files, so use the tzinfo-data gem
+gem "tzinfo-data", platforms: %i[ windows jruby ]
+
+# Use the database-backed adapters for Rails.cache, Active Job, and Action Cable
+gem "solid_cache"
+gem "solid_queue"
+gem "solid_cable"
+
+# Reduces boot times through caching; required in config/boot.rb
+gem "bootsnap", require: false
+
+group :development, :test do
+  # See https://guides.rubyonrails.org/debugging_rails_applications.html#debugging-with-the-debug-gem
+  gem "debug", platforms: %i[ mri windows ], require: "debug/prelude"
+
+  # Audits gems for known security defects [https://github.com/rubygems/bundler-audit]
+  gem "bundler-audit", require: false
+
+  # Omakase Ruby styling [https://github.com/rails/rubocop-rails-omakase/]
+  gem "rubocop-rails-omakase", require: false
+end
+
+group :development do
+  # See https://guides.rubyonrails.org/debugging_rails_applications.html#debugging-with-the-debug-gem
+  gem "web-console"
+end
+gem "tailwind_merge", "~> 1.5"

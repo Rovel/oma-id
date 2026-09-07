@@ -1,0 +1,16 @@
+# Rails server ignores (generator ran with --skip-git, so this is manual)
+tmp/*
+!tmp/.keep
+log/*
+!log/.keep
+storage/*
+!storage/.keep
+.bundle
+.env
+.env.*
+!.env.example
+node_modules/
+coverage/
+*.pid
+*.seed
+.DS_Store

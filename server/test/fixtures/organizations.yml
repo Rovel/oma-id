@@ -1,0 +1,6 @@
+# Lab organization fixture. Issuer uniqueness is enforced per deployment
+# (ADR-0004), so each fixture uses a distinct origin.
+lab:
+  name: OMA-ID Lab
+  issuer: http://lab.test:3000
+  support_email: id-admin@lab.test
