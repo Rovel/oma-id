@@ -368,9 +368,12 @@ content, verified without touching any local disk.
 
 ### Next native slice
 
-Burn the verified ISO artifact (run 34074550877, `omarchy-iso-oma-id-p0`) to
-USB, boot a real machine into the live environment, and run
-`bash /opt/oma-id/run-smoke.sh` (or `zsh …` — the live root is zsh-first) —
-the one remaining consumer-path gap for the stand-in; a booted machine is
-not a container. Then the next native slice returns to the agent side:
-lease store / trust-chain groundwork per oma-id_plan.md.
+Booted-hardware smoke: DONE (owner-executed on the burnt machine,
+2026-09-07 — all green; see docs/p0/server-baseline.md). The stand-in's
+consumer-path evidence is complete. The installer work/school selector
+(`tests/iso-smoke/installer-choice.sh`, oma-id a38d536) is wired into the
+omarchy-iso configurator behind the layer gate; its CI contract tests run
+in omarchy-iso packaging-smoke. Next: burn the rebuilt ISO and exercise the
+selector against the lab Rails server on the LAN (browser + validate
+display), then return to the agent side — lease store / trust-chain
+groundwork per oma-id_plan.md.

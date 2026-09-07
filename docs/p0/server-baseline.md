@@ -52,7 +52,33 @@ scope notice, metadata JSON contract, unseeded fail-closed).
 - Burnt-ISO consumer test (live Omarchy environment, P0 stand-in layer):
   open `http://192.168.1.10:3000/` in the live desktop browser and
   `curl http://192.168.1.10:3000/.well-known/oma-enrollment` from a live
-  terminal. Record exact results below when executed.
+  terminal.
+
+  **Booted-hardware result (2026-09-07, owner-executed):** the live PAM
+  smoke (`zsh /opt/oma-id/run-smoke.sh`) passed all green on the burnt
+  machine — the final consumer-path gap for the stand-in is closed with
+  booted-hardware evidence (owner-reported; full transcript not retained).
+
+## Installer work/school selector (stand-in slice, 2026-09-07)
+
+`tests/iso-smoke/installer-choice.sh` (oma-id `a38d536`) is the plan §6.1
+ownership choice for the ISO configurator, gated on the layer's presence so
+personal builds are untouched (ADR-006). Personal use contacts no server;
+School / work validates the OMA-ID server against the §11.4 metadata
+contract and displays the organization confirmation with the requested
+origin next to the canonical issuer. P0 boundary: no enrollment protocol
+exists yet, so the work/school path ends in an explicit user choice —
+continue as personal or abort — never a silent fallback (§6.4). The
+validated choice is recorded to `/run/oma-id/standin-choice.json` (live
+environment only).
+
+Local verification (disposable Arch container): `validate` against the
+real running Rails server → exit 0 with the confirmation table (requested
+origin `http://host.docker.internal:3000` shown against canonical issuer
+`http://192.168.1.10:3000` — the §6.2 comparison, live); wrong-protocol
+metadata, truncated JSON, unreachable server, and invalid origin all
+rejected with nonzero exits. CI contract tests run in omarchy-iso
+`packaging-smoke` on every push.
 
 ## Boundaries and remaining work
 
