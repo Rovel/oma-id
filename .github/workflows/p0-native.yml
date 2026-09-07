@@ -37,8 +37,8 @@ jobs:
           docker rm -f oma-pam-run >/dev/null 2>&1 || true
           docker run -d --name oma-pam-run oma-id-p0-arch-pam:ci
           timeout 1800 docker wait oma-pam-run
-      # Docker bind mounts from WSL do not sync; the runner is fine, but keep
-      # the same copy-out pattern as the local evidence runs.
+      # Keep the same copy-out pattern as the local evidence runs (bind mounts
+      # from virtualized hosts may not sync).
       - name: Copy results out of the container
         run: |
           set -euo pipefail

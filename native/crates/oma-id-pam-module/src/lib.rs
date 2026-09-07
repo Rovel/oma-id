@@ -27,7 +27,7 @@
 //!   lockout-bypass vector, not a convenience.
 //!
 //! `libpam` is resolved at runtime with `dlopen`, so the crate builds on any
-//! Linux host (WSL included) and links nothing beyond libc.
+//! Linux host and links nothing beyond libc.
 
 #![cfg(target_os = "linux")]
 

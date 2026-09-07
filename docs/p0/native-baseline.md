@@ -20,11 +20,10 @@ an older assumed profile, not the locker in the selected source baseline.
 
 ## Available isolation
 
-The development host is WSL2; no host QEMU or `/dev/kvm` was found. Docker Desktop
-provides Linux containers, also without `/dev/kvm` in the inspected container.
-The owner offered a disposable Arch WSL distro; its name is not yet supplied.
-Such a distro can validate packaging and service integration, but does not by
-itself prove the selected desktop's graphical, firmware, or recovery paths.
+The development host provides Linux containers but no host QEMU or `/dev/kvm`
+in the inspected environment. A disposable distro or VM can validate packaging
+and service integration, but does not by itself prove the selected desktop's
+graphical, firmware, or recovery paths.
 
 The upstream ISO acceptance runner requires KVM (`-enable-kvm`, `-cpu host`).
 Its dependency installer must not be run on this host. A separate VM runner or
@@ -329,11 +328,11 @@ Rovel/omarchy-iso (commit cbfe8b1), pinning oma-id at
 
 An attempt to verify the downloaded ISO artifact locally (7.9G zip →
 7.4G ISO → squashfs extraction) exhausted the Windows host disk and
-  crashed the machine: WSL2 vhdx files grow dynamically as Linux writes,
-  so `df` inside WSL is meaningless for host-disk risk. Policy from here:
-  heavy artifact handling (multi-GB extraction, chroot verification) runs
-  only on disposable CI runner disks or non-system disks; locally, at most
-  `gh run download` for a USB burn.
+  crashed the machine: virtualized dev disks grow dynamically as Linux
+  writes, so free space inside the dev environment is meaningless for
+  host-disk risk. Policy from here: heavy artifact handling (multi-GB
+  extraction, chroot verification) runs only on disposable CI runner disks
+  or non-system disks; locally, at most `gh run download` for a USB burn.
 
 #### CI smoke on the installed live root (runs 34072614610 → 34074550877)
 
@@ -372,7 +371,7 @@ Selector end-to-end on the burnt machine: DONE (owner-executed 2026-09-07,
 all green — see docs/p0/server-baseline.md). The §6.1/§6.2 consumer path is
 proven end to end: burnt ISO → ownership choice → server validation →
 Rails identity front. Remaining P0/P1 boundary work: LAN reachability from
-other devices needs a one-time Windows Hyper-V/firewall allow (WSL mirrored
-networking; commands recorded in docs/p0/server-baseline.md), then the
+other devices may need a one-time host firewall allow (see
+docs/p0/server-baseline.md), then the
 Rails identity foundation (people, admin bootstrap, authentication) and
 agent-side lease store / trust-chain groundwork per oma-id_plan.md.

@@ -53,4 +53,4 @@ run = "cd server && BUNDLE_PATH=$PWD/../.cache/bundle BUNDLE_USER_HOME=$PWD/../.
 
 [tasks."server:up"]
 description = "Serve the P0 identity front on all interfaces (LAN lab exposure; HTTP, development only)"
-run = "cd server && BUNDLE_PATH=$PWD/../.cache/bundle BUNDLE_USER_HOME=$PWD/../.cache/bundler RAILS_DEVELOPMENT_HOSTS=host.docker.internal bin/rails server -b 0.0.0.0 -p 3000"
+run = "cd server && BUNDLE_PATH=$PWD/../.cache/bundle BUNDLE_USER_HOME=$PWD/../.cache/bundler bin/rails server -b 0.0.0.0 -p 3000"

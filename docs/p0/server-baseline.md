@@ -46,12 +46,12 @@ scope notice, metadata JSON contract, unseeded fail-closed).
 
 - `mise run server:up` binds `0.0.0.0:3000` (HTTP, development only — real
   enrollment requires HTTPS per plan §6.2; no HTTP-fallback claim).
-- From this machine via its LAN address (`http://192.168.1.10:3000`):
+- From this machine via its LAN address (`http://<server-lan-ip>:3000`):
   `/` → 200 with organization render, `/.well-known/oma-enrollment` → 200
-  with the metadata JSON (issuer `http://192.168.1.10:3000`), `/up` → 200.
+  with the metadata JSON (issuer `http://<server-lan-ip>:3000`), `/up` → 200.
 - Burnt-ISO consumer test (live Omarchy environment, P0 stand-in layer):
-  open `http://192.168.1.10:3000/` in the live desktop browser and
-  `curl http://192.168.1.10:3000/.well-known/oma-enrollment` from a live
+  open `http://<server-lan-ip>:3000/` in the live desktop browser and
+  `curl http://<server-lan-ip>:3000/.well-known/oma-enrollment` from a live
   terminal.
 
   **Booted-hardware result (2026-09-07, owner-executed):** the live PAM
@@ -74,8 +74,8 @@ recorded to `/run/oma-id/standin-choice.json` (live environment only).
 
 Local verification (disposable Arch container): `validate` against the
 real running Rails server → exit 0 with the confirmation table (requested
-origin `http://host.docker.internal:3000` shown against canonical issuer
-`http://192.168.1.10:3000` — the §6.2 comparison, live); wrong-protocol
+origin (a disposable container route) shown against canonical issuer
+`http://<server-lan-ip>:3000` — the §6.2 comparison, live); wrong-protocol
 metadata, truncated JSON, unreachable server, and invalid origin all
 rejected with nonzero exits. CI contract tests run in omarchy-iso
 `packaging-smoke` on every push (green run 34084486375: bash+zsh smoke
@@ -125,19 +125,14 @@ still P2; nothing was enrolled.
   (`rails g ruby_ui:component`); `rails new --skip-git` also skips
   `.gitignore` generation (tmp/log caches got committed once, amended away).
 
-## LAN reachability note (WSL2 mirrored networking, 2026-09-07)
+## LAN reachability note (2026-09-07)
 
-This machine runs WSL2 in mirrored mode: the WSL interface and the Windows
-adapter share `192.168.1.10`, so the server address is correct. Inbound
-devices are still blocked by the Hyper-V firewall
-(`Get-NetFirewallHyperVVMSetting` → `DefaultInboundAction: Block`), which
-even blocks Windows itself from reaching the port. One-time elevated fix
-(admin PowerShell), scoped to a lab rule:
+The development host's virtualized networking may block inbound devices by
+default even when the server binds all interfaces. The one-time fix is a
+host firewall allow for the chosen port (consult the host platform's
+firewall documentation; scope the rule to the lab network and remove it
+after the demo). If the selector cannot reach the server from another
+device, verify the port with a local curl first, then the host firewall.
 
-```powershell
-Set-NetFirewallHyperVVMSetting -Name '{40E0AC32-46A5-438A-A0B2-2B479E8F2E90}' -DefaultInboundAction Allow
-New-NetFirewallRule -DisplayName "oma-id-p0-lab" -Direction Inbound -LocalPort 3000 -Protocol TCP -Action Allow
-```
-
-`mise run server:up` sets `RAILS_DEVELOPMENT_HOSTS=host.docker.internal` so
+`mise run server:up` honors `RAILS_DEVELOPMENT_HOSTS` so
 disposable containers can also reach the lab server during tests.

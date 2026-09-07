@@ -42,7 +42,7 @@ Start with a small, organization-owned fleet and one organization per self-hoste
 
 The first hardware target is x86_64 UEFI, with a small, published supported-hardware list. ARM, arbitrary hardware, personally owned devices, and classroom kiosks are later profiles. The design must leave room for shared school/work machines without implementing every profile in the first pilot.
 
-Use independently deployable OMA-ID infrastructure. Do not couple workstation availability to another business application's database, authentication session, release cadence, or tenant-switching middleware. A Rails application such as Umanni may become an OIDC client later; it must not be a prerequisite for OMA-ID to operate.
+Use independently deployable OMA-ID infrastructure. Do not couple workstation availability to another business application's database, authentication session, release cadence, or tenant-switching middleware. An OMA-ID application may become an OIDC client later; it must not be a prerequisite for OMA-ID to operate.
 
 ### 1.2 Replacement map
 
@@ -738,7 +738,7 @@ Some work can proceed in parallel after contracts are agreed, but P7 must not hi
 
 ### P0 tasks in more detail
 
-**Selected desktop source correction (2026-09-05):** The clean local `../omarchy` checkout matches pinned commit `493067741e081c3b09082da6bfd51e99ec24ef00`. It launches Quickshell via `omarchy-shell lock lock`, with distinct `omarchy-lock-password` and `omarchy-lock-fingerprint` PAM services. Quickshell is therefore the required lock consumer for this baseline; older Hyprlock profiles require separate evidence. WSL and disposable Arch containers can establish build/package evidence, but cannot establish graphical unlock, suspend/resume, encrypted boot, or recovery gates. See `docs/p0/native-baseline.md`.
+**Selected desktop source correction (2026-09-05):** The clean local `../omarchy` checkout matches pinned commit `493067741e081c3b09082da6bfd51e99ec24ef00`. It launches Quickshell via `omarchy-shell lock lock`, with distinct `omarchy-lock-password` and `omarchy-lock-fingerprint` PAM services. Quickshell is therefore the required lock consumer for this baseline; older Hyprlock profiles require separate evidence. Disposable Arch containers can establish build/package evidence, but cannot establish graphical unlock, suspend/resume, encrypted boot, or recovery gates. See `docs/p0/native-baseline.md`.
 
 **Executed P0 evidence:** The latest local Ruby 4/Rails harness passed 40 tests and 269 assertions with zero failures, errors, or skips. It covers durable refresh-family tracking, ancestor replay revocation, wrong-client/family isolation, PostgreSQL lock contention, atomic audit failure recovery, a fresh-process replay probe, JWT algorithm substitution, discovery host tampering, and device scope enforcement. Lab discovery, device-denial, scope, and family adapters remain explicit; raw mode reproduces dependency gaps. See `docs/p0/protocol-experiment.md` and `docs/adr/0003-refresh-family-replay.md`. These are lab results, not production directory/authorization review, a real enrollment client, browser authentication, native login, offline enforcement, or a passed P0 gate.
 

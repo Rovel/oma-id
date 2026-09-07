@@ -21,7 +21,7 @@ class OrganizationTest < ActiveSupport::TestCase
 
   test "lab http issuer is permitted in this P0 slice" do
     org = Organization.new(
-      name: "LAN Lab", issuer: "http://192.168.1.10:3000",
+      name: "LAN Lab", issuer: "http://198.51.100.10:3000",
       support_email: "admin@lan.test"
     )
     assert org.valid?

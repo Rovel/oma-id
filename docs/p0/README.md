@@ -45,8 +45,8 @@ remain to be reviewed before distributing anything.
 - All selected libraries load together on Ruby 4.0.6 and Rails 8.1.3.1.
 - Compose PostgreSQL reports healthy; SQL reports PostgreSQL 18.6 and database
   `oma_id_development`. The service is left running for development.
-- Docker Compose configuration validates. Docker Desktop works outside the
-  execution sandbox; its Windows launcher fails inside the sandbox.
+- Docker Compose configuration validates; Docker works outside the
+  execution sandbox.
 - Host-native QEMU and `/dev/kvm` were not available in the inspected environment.
   No VM login experiment was attempted; choose a disposable VM runner and media.
 - [Protocol experiment](protocol-experiment.md): latest run is 40 tests / 269
