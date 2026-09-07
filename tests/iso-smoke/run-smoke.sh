@@ -9,6 +9,10 @@
 # The mapped PAM service is omarchy-lock-password (Quickshell/Unlock), NOT
 # sddm, so no real display-manager service file is touched. The module under
 # test never reads the environment; only this harness does ($OMA_TEST_PASSWORD).
+#
+# NOTE: the Omarchy live airootfs ships zsh, not bash — this script must run
+# under EITHER shell (build-iso.sh invokes it with an explicit interpreter).
+# Stick to the shared bash/zsh subset: no arrays, no PIPESTATUS, no ${var,,}.
 set -uo pipefail
 
 MODULE=/usr/lib/security/pam_oma_id.so
@@ -18,6 +22,13 @@ SOCKET=/run/oma-id/agent.sock
 MAPPED_SERVICE=omarchy-lock-password
 UNMAPPED_SERVICE=oma-test-unmapped
 AGENT_PASSWORD="p1nned-credential"
+
+# Self-check the tools this script needs (clear diagnostics before any PAM
+# activity, so a missing tool is not mistaken for a protocol failure).
+for tool in awk date sleep mktemp; do
+  command -v "$tool" >/dev/null 2>&1 || { echo "missing tool: $tool"; exit 1; }
+done
+
 
 results=/tmp/oma-id-smoke-results.tsv
 : >"$results"
