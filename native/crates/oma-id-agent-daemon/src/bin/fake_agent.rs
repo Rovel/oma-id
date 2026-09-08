@@ -8,7 +8,7 @@
 
 use oma_id_agent_core::{Operation as CoreOperation, VerifiedLease};
 use oma_id_agent_daemon::ServiceConfig;
-use oma_id_agent_store::Store;
+use oma_id_agent_store::{IssuerKeySet, Store};
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -17,8 +17,12 @@ enum LeaseSource {
     /// The original CLI-supplied (unsigned) lease — the pre-store harness
     /// mode, kept for the established scenario scripts.
     Cli,
-    /// A signed-lease store verified against a pinned issuer key.
+    /// A signed-lease store verified against a pinned issuer key (single
+    /// key — the pre-ADR-0005 compatibility mode).
     Store { path: PathBuf, issuer_key: String },
+    /// A signed-lease store verified against a pinned issuer KEY SET with
+    /// rotation states (ADR-0005). The preferred mode.
+    StoreWithKeySet { path: PathBuf, key_set: PathBuf },
 }
 
 struct Args {
@@ -60,6 +64,7 @@ fn parse(args: &[String]) -> Result<Args, String> {
     let mut socket: Option<PathBuf> = None;
     let mut store: Option<PathBuf> = None;
     let mut issuer_key: Option<String> = None;
+    let mut issuer_keys: Option<PathBuf> = None;
     let mut subject: Option<String> = None;
     let mut device: Option<String> = None;
     let mut not_before: Option<u64> = None;
@@ -81,6 +86,7 @@ fn parse(args: &[String]) -> Result<Args, String> {
             "--socket" => socket = Some(PathBuf::from(value)),
             "--store" => store = Some(PathBuf::from(value)),
             "--issuer-key" => issuer_key = Some(value.into()),
+            "--issuer-keys" => issuer_keys = Some(PathBuf::from(value)),
             "--subject" => subject = Some(value.into()),
             "--device" => device = Some(value.into()),
             "--not-before" => not_before = Some(parse_u64(value, "not-before")?),
@@ -104,25 +110,31 @@ fn parse(args: &[String]) -> Result<Args, String> {
 
     let socket = socket.ok_or("missing required argument --socket")?;
 
-    // Store mode: --store + --issuer-key, and the CLI lease args must not be
-    // mixed in — one lease source, never two.
-    match (store, issuer_key) {
-        (Some(path), Some(issuer_key)) => {
-            let cli_lease_args = [
-                ("--subject", subject.is_some()),
-                ("--device", device.is_some()),
-                ("--not-before", not_before.is_some()),
-                ("--expires-at", expires_at.is_some()),
-                ("--revocation-epoch", revocation_epoch.is_some()),
-                ("--trusted-time-floor", trusted_time_floor.is_some()),
-                ("--min-revocation-epoch", minimum_revocation_epoch.is_some()),
-                ("--ops", ops.is_some()),
-            ];
-            if let Some((name, _)) = cli_lease_args.into_iter().find(|(_, present)| *present) {
-                return Err(format!(
-                    "--store must not be combined with {name}; the lease comes from the store"
-                ));
-            }
+    // Store mode: --store with --issuer-keys (ADR-0005 key set) or the
+    // single-key --issuer-key compatibility mode; CLI lease args must not
+    // be mixed in — one lease source, never two.
+    if issuer_keys.is_some() && issuer_key.is_some() {
+        return Err("--issuer-keys and --issuer-key are mutually exclusive".into());
+    }
+    match (store, issuer_keys, issuer_key) {
+        (Some(path), Some(key_set_path), None) => {
+            reject_mixed_cli_lease_args(&subject, &device, &not_before, &expires_at, &revocation_epoch, &trusted_time_floor, &minimum_revocation_epoch, &ops);
+            Ok(Args {
+                socket,
+                lease_source: LeaseSource::StoreWithKeySet { path, key_set: key_set_path },
+                subject: None,
+                device: None,
+                not_before: None,
+                expires_at: None,
+                revocation_epoch: None,
+                trusted_time_floor: None,
+                minimum_revocation_epoch: None,
+                ops: None,
+                password,
+            })
+        }
+        (Some(path), None, Some(issuer_key)) => {
+            reject_mixed_cli_lease_args(&subject, &device, &not_before, &expires_at, &revocation_epoch, &trusted_time_floor, &minimum_revocation_epoch, &ops);
             Ok(Args {
                 socket,
                 lease_source: LeaseSource::Store { path, issuer_key },
@@ -137,11 +149,16 @@ fn parse(args: &[String]) -> Result<Args, String> {
                 password,
             })
         }
-        (Some(_), None) => {
-            Err("--store requires --issuer-key (pinned hex issuer key)".to_string())
+        (Some(_), None, None) => {
+            Err("--store requires --issuer-keys (ADR-0005 key set) or --issuer-key (single key)".to_string())
         }
-        (None, Some(_)) => Err("--issuer-key requires --store".to_string()),
-        (None, None) => {
+        (Some(_), Some(_), Some(_)) => {
+            Err("--issuer-keys and --issuer-key are mutually exclusive".into())
+        }
+        (None, _, Some(_)) | (None, Some(_), None) => {
+            Err("--issuer-keys/--issuer-key require --store".to_string())
+        }
+        (None, None, None) => {
             let subject = subject.ok_or("missing required argument --subject")?;
             let device = device.ok_or("missing required argument --device")?;
             let not_before = not_before.ok_or("missing required argument --not-before")?;
@@ -167,6 +184,34 @@ fn parse(args: &[String]) -> Result<Args, String> {
                 password,
             })
         }
+    }
+}
+
+/// The CLI lease arguments and store mode are mutually exclusive: one lease
+/// source, never two.
+fn reject_mixed_cli_lease_args(
+    subject: &Option<String>,
+    device: &Option<String>,
+    not_before: &Option<u64>,
+    expires_at: &Option<u64>,
+    revocation_epoch: &Option<u64>,
+    trusted_time_floor: &Option<u64>,
+    minimum_revocation_epoch: &Option<u64>,
+    ops: &Option<String>,
+) {
+    let present = [
+        ("--subject", subject.is_some()),
+        ("--device", device.is_some()),
+        ("--not-before", not_before.is_some()),
+        ("--expires-at", expires_at.is_some()),
+        ("--revocation-epoch", revocation_epoch.is_some()),
+        ("--trusted-time-floor", trusted_time_floor.is_some()),
+        ("--min-revocation-epoch", minimum_revocation_epoch.is_some()),
+        ("--ops", ops.is_some()),
+    ];
+    if let Some((name, _)) = present.into_iter().find(|(_, present)| *present) {
+        eprintln!("fake-agent: --store must not be combined with {name}; the lease comes from the store");
+        std::process::exit(2);
     }
 }
 
@@ -197,6 +242,48 @@ fn main() -> ExitCode {
     // The store must outlive every lease borrow below. `None` in CLI mode.
     let mut loaded_store: Option<Store> = None;
     let (lease, trusted_time_floor, minimum_revocation_epoch) = match &args.lease_source {
+        LeaseSource::StoreWithKeySet { path, key_set } => {
+            let key_set = match IssuerKeySet::load(key_set) {
+                Ok(set) => set,
+                Err(error) => {
+                    eprintln!("fake-agent: issuer key set (fail closed): {error}");
+                    return ExitCode::FAILURE;
+                }
+            };
+            let store = match Store::load(path) {
+                Ok(store) => store,
+                Err(error) => {
+                    eprintln!("fake-agent: store load (fail closed): {error}");
+                    return ExitCode::FAILURE;
+                }
+            };
+            let verifying = match key_set.active_key() {
+                Ok((_, verifying)) => verifying,
+                Err(error) => {
+                    eprintln!("fake-agent: active issuer key: {error}");
+                    return ExitCode::FAILURE;
+                }
+            };
+            if let Err(error) = store.verify_all_with_key_set(&key_set, &verifying) {
+                eprintln!("fake-agent: store verification (fail closed): {error}");
+                return ExitCode::FAILURE;
+            }
+            let lease = match active_lease_in(&store, now) {
+                Some(lease) => lease,
+                None => {
+                    eprintln!("fake-agent: no unexpired lease in the store authorizes any operation");
+                    return ExitCode::FAILURE;
+                }
+            };
+            // Anti-rollback floor (plan §9.3): never below the highest
+            // revocation epoch this agent has persisted.
+            let floor = store.high_water_revocation_epoch().min(lease.revocation_epoch);
+            loaded_store = Some(store);
+            let store = loaded_store.as_ref().expect("store just assigned");
+            let lease = active_lease_in(store, now).expect("same store, same selection");
+            let ttf = lease.not_before;
+            (lease, ttf, floor)
+        }
         LeaseSource::Store { path, issuer_key } => {
             let issuer = match oma_id_agent_store::issuer_verifying_key(issuer_key) {
                 Ok(key) => key,

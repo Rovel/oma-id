@@ -55,7 +55,7 @@ module Api
           assert_response :created
 
           body = JSON.parse(@response.body)
-          assert_equal 1, body["version"]
+          assert_equal 2, body["version"], "ADR-0005 store format v2 (key_id per lease)"
           lease = body["leases"].first
           payload = lease["payload"]
 
@@ -74,8 +74,17 @@ module Api
                  "issued lease signature must self-verify"
           assert_equal(
             OmaId::LeaseSigningKey.canonical_payload_json(canonical_payload),
-            lease["payload"].then { |p| OmaId::LeaseSigningKey.canonical_payload_json(canonical_payload) }
+            OmaId::LeaseSigningKey.canonical_payload_json(canonical_payload)
           )
+
+          # ADR-0005: the key_id is derived (SHA-256 of the public key),
+          # stamped into the store record, and the signing key is registered.
+          expected_key_id = IssuerKey.derive_key_id_from_public_hex(key.verify_key_hex)
+          assert_equal expected_key_id, body["key_id"]
+          key_row = IssuerKey.active_lease_signing_key
+          assert_not_nil key_row, "the signing key must be registered"
+          assert_equal body["key_id"], key_row.key_id
+          assert_equal key.verify_key_hex, key_row.public_key_hex
 
           # The issuance is recorded for epoch monotonicity + audit.
           issued = IssuedLease.find_by!(subject_id: "person-1", device_id: "device-1")

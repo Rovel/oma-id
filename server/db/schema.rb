@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_08_030030) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_08_033458) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -35,6 +35,17 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_08_030030) do
     t.string "subject_id", null: false
     t.datetime "updated_at", null: false
     t.index ["subject_id", "device_id", "revocation_epoch"], name: "idx_issued_leases_subject_device_epoch", unique: true
+  end
+
+  create_table "issuer_keys", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "key_id", null: false
+    t.string "public_key_hex", null: false
+    t.string "purpose", null: false
+    t.string "state", null: false
+    t.datetime "updated_at", null: false
+    t.index ["purpose", "key_id"], name: "index_issuer_keys_on_purpose_and_key_id", unique: true
+    t.index ["purpose", "state"], name: "index_issuer_keys_on_purpose_and_state"
   end
 
   create_table "login_aliases", force: :cascade do |t|

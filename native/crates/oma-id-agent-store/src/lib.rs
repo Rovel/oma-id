@@ -71,22 +71,39 @@ impl LeasePayload {
 }
 
 /// A lease payload plus its ed25519 signature over the payload's canonical
-/// JSON encoding (see `canonical_payload_json`). Both signing (issuer) and
-/// verification (agent) must use this exact encoding; the cross-language
-/// contract is pinned by `protocol/lease-v1/` fixtures and tested in both
-/// languages.
+/// JSON encoding (see `canonical_payload_json`), and the `key_id` of the
+/// issuer key that signed it (ADR-0005: key_id = SHA-256 of the raw public
+/// key, hex). Both signing (issuer) and verification (agent) must use the
+/// same canonical encoding; the cross-language contract is pinned by
+/// `protocol/lease-v1/` fixtures and tested in both languages.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SignedLease {
     pub payload: LeasePayload,
     /// hex-encoded ed25519 signature over `canonical_payload_json(&payload)`.
     pub signature: String,
+    /// Identifies the issuer key that signed this lease (ADR-0005). Empty in
+    /// the single-key compatibility mode.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    pub key_id: String,
 }
 
 impl SignedLease {
     pub fn sign(payload: LeasePayload, issuer: &SigningKey) -> Self {
+        Self::sign_with_key_id(payload, issuer, "")
+    }
+
+    pub fn sign_with_key_id(
+        payload: LeasePayload,
+        issuer: &SigningKey,
+        key_id: &str,
+    ) -> Self {
         let bytes = canonical_payload_json(&payload);
         let signature = hex::encode(issuer.sign(&bytes).to_bytes());
-        Self { payload, signature }
+        Self {
+            payload,
+            signature,
+            key_id: key_id.to_string(),
+        }
     }
 
     /// Verify against the pinned issuer key; returns the verified payload on
@@ -98,6 +115,111 @@ impl SignedLease {
         let bytes = canonical_payload_json(&self.payload);
         issuer.verify_strict(&bytes, &signature)?;
         Ok(&self.payload)
+    }
+}
+
+/// The pinned issuer key set (ADR-0005). Exactly one `active` key signs new
+/// leases; `retiring` keys still verify during the rotation overlap;
+/// `revoked` keys never verify.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct IssuerKeySet {
+    pub version: u32,
+    pub keys: Vec<PinnedIssuerKey>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct PinnedIssuerKey {
+    pub key_id: String,
+    pub public_key_hex: String,
+    pub state: KeyState,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum KeyState {
+    Active,
+    Retiring,
+    Revoked,
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum KeyError {
+    #[error("unknown key_id {0}: not in the pinned set")]
+    UnknownKeyId(String),
+    #[error("key {0} is revoked")]
+    RevokedKey(String),
+    #[error("key set must contain exactly one active key")]
+    NotExactlyOneActive,
+    #[error("key_id {key_id} does not match a SHA-256 of the public key")]
+    KeyIdMismatch { key_id: String },
+    #[error(transparent)]
+    Io(#[from] std::io::Error),
+    #[error(transparent)]
+    Json(#[from] serde_json::Error),
+    #[error(transparent)]
+    Hex(#[from] hex::FromHexError),
+    #[error(transparent)]
+    Store(#[from] StoreError),
+}
+
+impl IssuerKeySet {
+    /// Parse and validate a key-set file: exactly one active key, and every
+    /// key_id must equal the SHA-256 of its public key (ADR-0005 §2 — ids
+    /// are derived, never chosen).
+    pub fn load(path: &Path) -> Result<Self, KeyError> {
+        let bytes = std::fs::read(path)?;
+        let set: IssuerKeySet = serde_json::from_slice(&bytes)?;
+        set.validate()?;
+        Ok(set)
+    }
+
+    pub fn validate(&self) -> Result<(), KeyError> {
+        if self.keys.iter().filter(|k| k.state == KeyState::Active).count() != 1 {
+            return Err(KeyError::NotExactlyOneActive);
+        }
+        for key in &self.keys {
+            Self::validate_key_id(key)?;
+        }
+        Ok(())
+    }
+
+    /// key_id must be SHA-256 of the raw 32-byte public key (hex).
+    pub fn validate_key_id(key: &PinnedIssuerKey) -> Result<(), KeyError> {
+        use sha2::{Digest, Sha256};
+        let raw = hex::decode(&key.public_key_hex)?;
+        let digest: [u8; 32] = Sha256::digest(&raw).into();
+        let derived = hex::encode(digest);
+        if derived != key.key_id.to_lowercase() {
+            return Err(KeyError::KeyIdMismatch {
+                key_id: key.key_id.clone(),
+            });
+        }
+        Ok(())
+    }
+
+    /// The verifying key for `key_id`, honoring the state machine: active
+    /// and retiring keys verify; revoked and unknown keys fail closed.
+    pub fn verifying_key_for(&self, key_id: &str) -> Result<VerifyingKey, KeyError> {
+        let pinned = self
+            .keys
+            .iter()
+            .find(|k| k.key_id == key_id)
+            .ok_or_else(|| KeyError::UnknownKeyId(key_id.to_string()))?;
+        if pinned.state == KeyState::Revoked {
+            return Err(KeyError::RevokedKey(key_id.to_string()));
+        }
+        Ok(issuer_verifying_key(&pinned.public_key_hex)?)
+    }
+
+    /// The active key's id and verifying key (the issuer-side selection is
+    /// mirrored here for tooling; Rails owns the actual signing decision).
+    pub fn active_key(&self) -> Result<(&PinnedIssuerKey, VerifyingKey), KeyError> {
+        let pinned = self
+            .keys
+            .iter()
+            .find(|k| k.state == KeyState::Active)
+            .ok_or(KeyError::NotExactlyOneActive)?;
+        Ok((pinned, issuer_verifying_key(&pinned.public_key_hex)?))
     }
 }
 
@@ -187,6 +309,10 @@ pub fn issuer_verifying_key(hex_key: &str) -> Result<VerifyingKey, StoreError> {
 struct StoredLease {
     payload: LeasePayload,
     signature: String,
+    /// Issuer key id that signed this lease (ADR-0005). Empty in version 1
+    /// stores (single implicit key).
+    #[serde(default)]
+    key_id: String,
     /// Agent receive time (unix seconds) — evidence metadata, not trusted.
     received_at: u64,
 }
@@ -206,7 +332,9 @@ pub struct Store {
     file: StoreFile,
 }
 
-const STORE_VERSION: u32 = 1;
+/// Store file version 2: leases carry the signing key_id (ADR-0005).
+/// Version 1 files (single implicit key) still load.
+const STORE_VERSION: u32 = 2;
 
 impl Store {
     /// Load the store from `path`. A missing file is an empty store (first
@@ -248,8 +376,34 @@ impl Store {
             let signed = SignedLease {
                 payload: stored.payload.clone(),
                 signature: stored.signature.clone(),
+                key_id: stored.key_id.clone(),
             };
             signed.verify(issuer)?;
+        }
+        Ok(())
+    }
+
+    /// Key-set aware verification (ADR-0005): each lease's signature is
+    /// checked with the pinned key matching its key_id — active and retiring
+    /// keys verify, revoked and unknown keys fail closed. A single-key
+    /// store (empty key_id) verifies against the fallback key.
+    pub fn verify_all_with_key_set(
+        &self,
+        key_set: &IssuerKeySet,
+        fallback: &VerifyingKey,
+    ) -> Result<(), KeyError> {
+        for stored in &self.file.leases {
+            let signed = SignedLease {
+                payload: stored.payload.clone(),
+                signature: stored.signature.clone(),
+                key_id: stored.key_id.clone(),
+            };
+            if stored.key_id.is_empty() {
+                signed.verify(fallback)?;
+            } else {
+                let issuer = key_set.verifying_key_for(&stored.key_id)?;
+                signed.verify(&issuer)?;
+            }
         }
         Ok(())
     }
@@ -288,6 +442,7 @@ impl Store {
         self.file.leases.push(StoredLease {
             payload: payload.clone(),
             signature: signed.signature.clone(),
+            key_id: signed.key_id.clone(),
             received_at: now,
         });
         self.file.high_water_revocation_epoch =
@@ -470,6 +625,143 @@ mod tests {
     #[test]
     fn bad_issuer_key_length_rejected() {
         assert!(issuer_verifying_key("abcd").is_err());
+    }
+
+    #[test]
+    fn key_set_rotation_overlap_and_revocation() {
+        // ADR-0005: active + retiring keys both verify; revoked keys fail
+        // closed; unknown key_ids fail closed.
+        let (old_issuer, _) = keypair(20);
+        let (new_issuer, new_verifying) = keypair(21);
+        let _ = new_verifying;
+
+        let key_set = IssuerKeySet {
+            version: 1,
+            keys: vec![
+                PinnedIssuerKey {
+                    key_id: key_id_of(&old_issuer),
+                    public_key_hex: hex::encode(old_issuer.verifying_key().as_bytes()),
+                    state: KeyState::Retiring,
+                },
+                PinnedIssuerKey {
+                    key_id: key_id_of(&new_issuer),
+                    public_key_hex: hex::encode(new_issuer.verifying_key().as_bytes()),
+                    state: KeyState::Active,
+                },
+            ],
+        };
+        key_set.validate().expect("one active, one retiring");
+
+        let old_lease = SignedLease::sign_with_key_id(payload(2_000, 7), &old_issuer, &key_id_of(&old_issuer));
+        let new_lease = SignedLease::sign_with_key_id(payload(3_000, 8), &new_issuer, &key_id_of(&new_issuer));
+
+        // Both verify during the overlap window.
+        let old_key = key_set.verifying_key_for(&old_lease.key_id).expect("retiring key verifies");
+        old_lease.verify(&old_key).expect("old lease verifies");
+        let new_key = key_set.verifying_key_for(&new_lease.key_id).expect("active key verifies");
+        new_lease.verify(&new_key).expect("new lease verifies");
+    }
+
+    #[test]
+    fn revoked_key_fails_closed() {
+        let (issuer, _) = keypair(22);
+        let key_set = IssuerKeySet {
+            version: 1,
+            keys: vec![PinnedIssuerKey {
+                key_id: key_id_of(&issuer),
+                public_key_hex: hex::encode(issuer.verifying_key().as_bytes()),
+                state: KeyState::Revoked,
+            }],
+        };
+        // Revoked keys break the "exactly one active" rule; build a set that
+        // validates by adding an active companion, then assert the revoked
+        // key cannot verify.
+        let (other_issuer, _) = keypair(23);
+        let set = IssuerKeySet {
+            version: 1,
+            keys: vec![
+                PinnedIssuerKey {
+                    key_id: key_id_of(&other_issuer),
+                    public_key_hex: hex::encode(other_issuer.verifying_key().as_bytes()),
+                    state: KeyState::Active,
+                },
+                PinnedIssuerKey {
+                    key_id: key_id_of(&issuer),
+                    public_key_hex: hex::encode(issuer.verifying_key().as_bytes()),
+                    state: KeyState::Revoked,
+                },
+            ],
+        };
+        set.validate().expect("exactly one active");
+        let error = set
+            .verifying_key_for(&key_id_of(&issuer))
+            .expect_err("revoked key must fail closed");
+        assert!(matches!(error, KeyError::RevokedKey(_)));
+        let _ = key_set;
+    }
+
+    #[test]
+    fn unknown_key_id_fails_closed() {
+        let (_, _) = keypair(24);
+        let (active, _) = keypair(25);
+        let set = IssuerKeySet {
+            version: 1,
+            keys: vec![PinnedIssuerKey {
+                key_id: key_id_of(&active),
+                public_key_hex: hex::encode(active.verifying_key().as_bytes()),
+                state: KeyState::Active,
+            }],
+        };
+        let error = set
+            .verifying_key_for("deadbeef")
+            .expect_err("unknown key_id must fail closed");
+        assert!(matches!(error, KeyError::UnknownKeyId(_)));
+    }
+
+    #[test]
+    fn key_id_mismatch_rejected_at_load() {
+        // key_id must be SHA-256 of the public key (ADR-0005 §2): a chosen
+        // id that does not derive from the key is rejected.
+        let (issuer, _) = keypair(26);
+        let set = IssuerKeySet {
+            version: 1,
+            keys: vec![PinnedIssuerKey {
+                key_id: "0000".into(),
+                public_key_hex: hex::encode(issuer.verifying_key().as_bytes()),
+                state: KeyState::Active,
+            }],
+        };
+        assert!(matches!(
+            set.validate(),
+            Err(KeyError::KeyIdMismatch { .. })
+        ));
+    }
+
+    #[test]
+    fn two_active_keys_rejected() {
+        let (a, _) = keypair(27);
+        let (b, _) = keypair(28);
+        let set = IssuerKeySet {
+            version: 1,
+            keys: vec![
+                PinnedIssuerKey {
+                    key_id: key_id_of(&a),
+                    public_key_hex: hex::encode(a.verifying_key().as_bytes()),
+                    state: KeyState::Active,
+                },
+                PinnedIssuerKey {
+                    key_id: key_id_of(&b),
+                    public_key_hex: hex::encode(b.verifying_key().as_bytes()),
+                    state: KeyState::Active,
+                },
+            ],
+        };
+        assert!(matches!(set.validate(), Err(KeyError::NotExactlyOneActive)));
+    }
+
+    fn key_id_of(key: &SigningKey) -> String {
+        use sha2::{Digest, Sha256};
+        hex::encode(Sha256::digest(key.verifying_key().as_bytes()))
     }
 
     #[test]

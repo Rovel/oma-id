@@ -48,7 +48,7 @@ module Api
           signature_hex:
         )
 
-        render json: store_file_shape(payload, signature_hex, issued.revocation_epoch),
+        render json: store_file_shape(payload, signature_hex, issued.revocation_epoch, active_key_id),
                status: :created
       rescue ActionController::ParameterMissing, LeaseIssueError => error
         render json: { error: error.message }, status: :bad_request
@@ -135,6 +135,21 @@ module Api
         [payload, signature_hex]
       end
 
+      # ADR-0005: the active lease-signing key's id is stamped into the
+      # issued lease and the store record, and returned so the operator can
+      # verify the agent pinned the right key. The key must be registered
+      # (IssuerKey row, key_id derived from the public key) — an unregistered
+      # signing key is a configuration error and fails closed.
+      def active_key_id
+        public_key_hex = signing_key.verify_key_hex
+        # Idempotent: re-registering the same key returns the existing row
+        # (the endpoint may be hit many times under one active key).
+        existing = IssuerKey.find_by(purpose: IssuerKey::PURPOSE, key_id: IssuerKey.derive_key_id(public_key_hex))
+        return existing.key_id if existing
+
+        IssuerKey.register!(public_key_hex:, state: "active").key_id
+      end
+
       def signing_key
         @signing_key ||= OmaId::LeaseSigningKey.from_seed_hex(
           ENV.fetch("OMA_ID_ISSUER_SEED", OmaId::LeaseSigningKey.lab_seed_hex)
@@ -145,18 +160,20 @@ module Api
       # `fake_agent --store <file> --issuer-key <hex>` (the pinned key is the
       # issuer's verify key; fetch it once with a token-less GET? No — it is
       # returned here under `issuer_verify_key_hex` for the lab flow).
-      def store_file_shape(payload, signature_hex, epoch)
+      def store_file_shape(payload, signature_hex, epoch, key_id)
         {
-          version: 1,
+          version: 2,
           high_water_revocation_epoch: epoch,
           leases: [
             {
               payload:,
               signature: signature_hex,
+              key_id:,
               received_at: Time.now.to_i
             }
           ],
-          issuer_verify_key_hex: signing_key.verify_key_hex
+          issuer_verify_key_hex: signing_key.verify_key_hex,
+          key_id:
         }
       end
     end

@@ -51,6 +51,7 @@ fn rails_signed_lease_vector_verifies_with_the_agent_verifier() {
     let signed = SignedLease {
         payload: payload.clone(),
         signature: vector["signature_hex"].as_str().expect("signature").into(),
+        key_id: String::new(), // lease-v1 fixture: single-key era
     };
     signed
         .verify(&issuer)

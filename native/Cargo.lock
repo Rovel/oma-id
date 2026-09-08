@@ -246,6 +246,7 @@ dependencies = [
  "oma-id-agent-core",
  "serde",
  "serde_json",
+ "sha2",
  "tempfile",
  "thiserror",
 ]
