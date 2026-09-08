@@ -23,6 +23,12 @@
   </head>
 
   <body>
+    <% if flash[:alert] %>
+      <div class="oma-flash"><p class="alert"><%= flash[:alert] %></p></div>
+    <% end %>
+    <% if flash[:notice] %>
+      <div class="oma-flash"><p class="notice"><%= flash[:notice] %></p></div>
+    <% end %>
     <%= yield %>
   </body>
 </html>

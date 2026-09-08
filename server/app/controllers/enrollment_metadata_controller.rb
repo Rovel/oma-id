@@ -2,6 +2,9 @@
 # executable content. Fails closed (503) when the organization is not yet
 # seeded, so an unconfigured server advertises nothing.
 class EnrollmentMetadataController < ApplicationController
+  # §11.4: public HTTPS metadata — no authentication.
+  allow_unauthenticated_access only: :show
+
   METADATA_PROTOCOL_VERSIONS = ["0"].freeze
   # No enrollment method is live on this server slice. The Doorkeeper
   # device-grant/OIDC combination is proven in tests/interop only; wiring it

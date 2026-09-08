@@ -2,15 +2,18 @@
 
 module Views
   module Pages
-    # P0 identity front. Server-rendered Phlex + RubyUI components
+    # P0/P1 identity front. Server-rendered Phlex + RubyUI components
     # (ADR-001, docs/adr/0002). Shows exactly what plan §6.2 requires an
     # enrollment confirmation to show: organization identity, support
     # contact, and the canonical issuer — plus an honest lab scope notice.
+    # P1-a: renders a signed-in banner (person + role + sign-out) when a
+    # session exists.
     class Home < Views::Base
       include Phlex::Rails::Helpers::Routes
 
       def initialize(organization:)
         @organization = organization
+        @person = Current.person
         super()
       end
 
@@ -19,6 +22,16 @@ module Views
           header(class: "oma-header") do
             render RubyUI::Badge.new(class: "oma-badge") { "OMA-ID" }
             h1 { org_name }
+            if @person
+              span(class: "oma-person") do
+                plain "#{@person.display_name} (#{@person.role})"
+              end
+              form(action: session_path, method: "post", class: "oma-inline-form") do
+                input(type: "hidden", name: "_method", value: "delete")
+                input(type: "hidden", name: "authenticity_token", value: form_authenticity_token)
+                button(type: "submit", class: "oma-signout") { "Sign out" }
+              end
+            end
           end
 
           if @organization
@@ -59,7 +72,7 @@ module Views
           end
 
           footer(class: "oma-footer") do
-            plain "P0 discovery slice — fake identities, development-only data. "
+            plain "P0/P1 lab slice — fake identities, development-only data. "
             plain "No login or enrollment gate has passed on this server."
           end
         end

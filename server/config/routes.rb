@@ -1,4 +1,6 @@
 Rails.application.routes.draw do
+  resource :session
+  resources :passwords, param: :token
   # Public enrollment metadata (oma-id_plan.md §11.4): protocol versions,
   # canonical issuer, enrollment methods, organization display information.
   # No secrets or executable content. This is the P0 consumer-path endpoint
@@ -14,8 +16,11 @@ Rails.application.routes.draw do
     end
   end
 
-  # Identity front. Server-rendered Phlex; locally served assets only.
+  # Identity front. Server-rendered Phlex; requires authentication (P1-a).
   root "pages#home"
+
+  # Authentication (Rails 8 scaffold, adapted to Person + LoginAlias).
+  resource :session, only: %i[new create destroy]
 
   # Reveal health status on /up that returns 200 if the app boots with no
   # exceptions, otherwise 500.

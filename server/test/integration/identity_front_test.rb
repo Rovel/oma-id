@@ -12,8 +12,8 @@ class IdentityFrontTest < ActionDispatch::IntegrationTest
     assert_match org.name, @response.body
     assert_match org.issuer, @response.body
     assert_match org.support_email, @response.body
-    # Honest scope notice: a P0 lab slice must not masquerade as a gate.
-    assert_match(/P0 discovery slice/, @response.body)
+    # Honest scope notice: a P0/P1 lab slice must not masquerade as a gate.
+    assert_match(/P0\/P1 lab slice/, @response.body)
     assert_match(/No login or enrollment gate/, @response.body)
   end
 

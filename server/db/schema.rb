@@ -10,9 +10,21 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_08_023912) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_08_030030) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
+
+  create_table "audit_events", force: :cascade do |t|
+    t.string "action", null: false
+    t.string "actor", null: false
+    t.datetime "created_at", null: false
+    t.jsonb "metadata", default: {}
+    t.string "result", null: false
+    t.string "target"
+    t.datetime "updated_at", null: false
+    t.index ["action"], name: "index_audit_events_on_action"
+    t.index ["created_at"], name: "index_audit_events_on_created_at"
+  end
 
   create_table "issued_leases", force: :cascade do |t|
     t.datetime "created_at", null: false
@@ -25,6 +37,15 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_08_023912) do
     t.index ["subject_id", "device_id", "revocation_epoch"], name: "idx_issued_leases_subject_device_epoch", unique: true
   end
 
+  create_table "login_aliases", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "email_address", null: false
+    t.bigint "person_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["email_address"], name: "index_login_aliases_on_email_address", unique: true
+    t.index ["person_id"], name: "index_login_aliases_on_person_id"
+  end
+
   create_table "organizations", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.string "issuer", null: false
@@ -33,4 +54,24 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_08_023912) do
     t.datetime "updated_at", null: false
     t.index ["issuer"], name: "index_organizations_on_issuer", unique: true
   end
+
+  create_table "people", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "display_name", null: false
+    t.string "password_digest", null: false
+    t.integer "role", default: 2, null: false
+    t.datetime "updated_at", null: false
+  end
+
+  create_table "sessions", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "ip_address"
+    t.bigint "person_id", null: false
+    t.datetime "updated_at", null: false
+    t.string "user_agent"
+    t.index ["person_id"], name: "index_sessions_on_person_id"
+  end
+
+  add_foreign_key "login_aliases", "people"
+  add_foreign_key "sessions", "people"
 end

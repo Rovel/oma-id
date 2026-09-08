@@ -17,8 +17,11 @@ module Api
     #   (subject, device) pair;
     # - leases are bounded (24h maximum validity — the §9.2 offline window);
     # - every issuance is recorded (IssuedLease audit trail).
-    class DeviceLeasesController < ActionController::Base
+    class DeviceLeasesController < ApplicationController
       # Bearer-token authenticated JSON API; no browser session is involved.
+      # Device credentials are separate from user credentials (§18), so the
+      # P1-a session requirement is skipped — the token IS the gate.
+      skip_before_action :require_authentication
       skip_before_action :verify_authenticity_token, raise: false
 
       MAX_DURATION_SECONDS = 24 * 60 * 60       # §9.2 offline window
