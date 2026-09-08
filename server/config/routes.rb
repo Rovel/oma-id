@@ -5,6 +5,15 @@ Rails.application.routes.draw do
   # the disposable Omarchy live environment fetches during the hookup test.
   get "/.well-known/oma-enrollment", to: "enrollment_metadata#show", as: :enrollment_metadata
 
+  # Lab lease issuance (bearer-gated; see the controller for the P3 stand-in
+  # boundary). Namespace-scoped so CSRF protection does not apply to this
+  # token-authenticated JSON API.
+  namespace :api do
+    namespace :v1 do
+      post "device/leases", to: "device_leases#create"
+    end
+  end
+
   # Identity front. Server-rendered Phlex; locally served assets only.
   root "pages#home"
 

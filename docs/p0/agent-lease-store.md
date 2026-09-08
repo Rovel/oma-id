@@ -70,3 +70,33 @@ clean (`--release -p oma-id-pam-module -p oma-id-agent-daemon`).
 The Rails issuer mints signed leases (P2 contract: device flow → lease
 issuance with the same payload schema), and the store's recorded
 `standin-choice`/enrollment handoff grows into the real renewal path.
+
+## Lease issuance endpoint (executed 2026-09-08)
+
+The Rails server now issues leases: `POST /api/v1/device/leases`
+(`server/app/controllers/api/v1/device_leases_controller.rb`), gated by a
+bearer token (`OMA_ID_LEASE_TOKEN`; unset → 503 fail-closed, wrong → bare
+401 — a lab stand-in for the §6.2 enrollment transaction, replaced in P3).
+The issuer owns the revocation epoch: strictly increasing per (subject,
+device) pair, persisted with every issuance (`IssuedLease` — the P0 audit
+trail, plan §16). Validity is bounded: 60s clock skew, 24h maximum duration
+(§9.2). The response IS the agent's store file (version, high-water mark,
+lease record) plus the pinned issuer key — the output drops straight into
+`fake_agent --store`.
+
+Tests: +7 Rails request tests (21 runs / 71 assertions / 0 failures): 503
+unconfigured, bare 401 wrong token, store-shape issuance with issuer-owned
+epoch, per-pair epoch monotonicity, 24h bound, unknown operation +
+oversized identifier rejections, malformed JSON.
+
+**Live end-to-end (executed in a disposable container against the running
+Rails server):** curl with the lab token → store file → `fake_agent --store
+--issuer-key <pinned>` → PAM-style client → `auth:0 acct:0`; wrong
+credential → `auth:7`; agent down → `auth:4`; wrong/missing token → 401.
+The full §9.1 chain now runs over the network: Rails identity → signed
+lease → agent store → real socket → PAM decision.
+
+Boundaries: the bearer token is a lab stand-in for the enrollment
+transaction; the issuer key is still lab seed material (ADR pending); the
+epoch is per-(subject, device) with no global revocation broadcast yet
+(the store's HWM enforces agent-side anti-rollback).

@@ -10,9 +10,20 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_07_000000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_08_023912) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
+
+  create_table "issued_leases", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "device_id", null: false
+    t.text "payload_json", null: false
+    t.integer "revocation_epoch", null: false
+    t.text "signature_hex", null: false
+    t.string "subject_id", null: false
+    t.datetime "updated_at", null: false
+    t.index ["subject_id", "device_id", "revocation_epoch"], name: "idx_issued_leases_subject_device_epoch", unique: true
+  end
 
   create_table "organizations", force: :cascade do |t|
     t.datetime "created_at", null: false

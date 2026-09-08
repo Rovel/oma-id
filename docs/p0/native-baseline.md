@@ -367,6 +367,8 @@ content, verified without touching any local disk.
 
 ### Next native slice
 
+NOTE: superseded content below; lease issuance executed 2026-09-08 — see docs/p0/agent-lease-store.md.
+
 Selector end-to-end on the burnt machine: DONE (owner-executed 2026-09-07,
 all green — see docs/p0/server-baseline.md). Agent-side trust-chain
 groundwork: DONE (signed leases + lease store + store-mode fake agent,
