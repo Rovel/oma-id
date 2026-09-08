@@ -70,20 +70,21 @@ impl LeasePayload {
     }
 }
 
-/// A lease payload plus its ed25519 signature over the payload's
-/// `serde_json` encoding. Both signing (issuer) and verification (agent)
-/// must use this exact encoding; the canonical cross-language contract is
-/// recorded as a P2 interop item.
+/// A lease payload plus its ed25519 signature over the payload's canonical
+/// JSON encoding (see `canonical_payload_json`). Both signing (issuer) and
+/// verification (agent) must use this exact encoding; the cross-language
+/// contract is pinned by `protocol/lease-v1/` fixtures and tested in both
+/// languages.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct SignedLease {
     pub payload: LeasePayload,
-    /// hex-encoded ed25519 signature over `serde_json::to_vec(&payload)`.
+    /// hex-encoded ed25519 signature over `canonical_payload_json(&payload)`.
     pub signature: String,
 }
 
 impl SignedLease {
     pub fn sign(payload: LeasePayload, issuer: &SigningKey) -> Self {
-        let bytes = serde_json::to_vec(&payload).expect("payload serialization cannot fail");
+        let bytes = canonical_payload_json(&payload);
         let signature = hex::encode(issuer.sign(&bytes).to_bytes());
         Self { payload, signature }
     }
@@ -94,10 +95,71 @@ impl SignedLease {
     pub fn verify(&self, issuer: &VerifyingKey) -> Result<&LeasePayload, StoreError> {
         let sig_bytes = hex::decode(&self.signature)?;
         let signature = Signature::from_slice(&sig_bytes)?;
-        let bytes = serde_json::to_vec(&self.payload)?;
+        let bytes = canonical_payload_json(&self.payload);
         issuer.verify_strict(&bytes, &signature)?;
         Ok(&self.payload)
     }
+}
+
+/// The pinned canonical encoding for lease signing (lease-v1).
+///
+/// Contract: compact JSON (no whitespace), fields in exactly this schema
+/// order — subject_id, device_id, not_before, expires_at, revocation_epoch,
+/// operations — with operations in the issuer-supplied order and UTF-8
+/// output. Signing ANY other byte sequence (different order, spacing, or
+/// key casing) produces a different signature by design; both signers and
+/// verifiers must emit bytes identical to this function.
+pub fn canonical_payload_json(payload: &LeasePayload) -> Vec<u8> {
+    let mut out = Vec::with_capacity(256);
+    out.extend_from_slice(b"{");
+    write_string_field(&mut out, "subject_id", &payload.subject_id);
+    out.extend_from_slice(b",\"device_id\":");
+    write_json_string(&mut out, &payload.device_id);
+    out.extend_from_slice(b",\"not_before\":");
+    out.extend_from_slice(payload.not_before.to_string().as_bytes());
+    out.extend_from_slice(b",\"expires_at\":");
+    out.extend_from_slice(payload.expires_at.to_string().as_bytes());
+    out.extend_from_slice(b",\"revocation_epoch\":");
+    out.extend_from_slice(payload.revocation_epoch.to_string().as_bytes());
+    out.extend_from_slice(b",\"operations\":[");
+    for (index, operation) in payload.operations.iter().enumerate() {
+        if index > 0 {
+            out.push(b',');
+        }
+        let name = match operation {
+            Operation::Login => "Login",
+            Operation::Unlock => "Unlock",
+            Operation::Elevate => "Elevate",
+            Operation::RemoteLogin => "RemoteLogin",
+        };
+        write_json_string(&mut out, name);
+    }
+    out.extend_from_slice(b"]}");
+    out
+}
+
+fn write_string_field(out: &mut Vec<u8>, key: &str, value: &str) {
+    out.push(b'"');
+    out.extend_from_slice(key.as_bytes());
+    out.extend_from_slice(b"\":");
+    write_json_string(out, value);
+}
+
+/// Minimal JSON string writer: the fields signed here are constrained to
+/// ASCII identifiers by the enrollment contract, but escape defensively
+/// (quote, backslash, control characters) so malformed input cannot change
+/// the signed meaning.
+fn write_json_string(out: &mut Vec<u8>, value: &str) {
+    out.push(b'"');
+    for byte in value.bytes() {
+        match byte {
+            b'"' => out.extend_from_slice(b"\\\""),
+            b'\\' => out.extend_from_slice(b"\\\\"),
+            0x00..=0x1F => out.extend_from_slice(format!("\\u{:04x}", byte).as_bytes()),
+            _ => out.push(byte),
+        }
+    }
+    out.push(b'"');
 }
 
 /// Generate an issuer keypair from a 32-byte seed. The key ceremony and
@@ -408,6 +470,40 @@ mod tests {
     #[test]
     fn bad_issuer_key_length_rejected() {
         assert!(issuer_verifying_key("abcd").is_err());
+    }
+
+    #[test]
+    fn canonical_encoding_matches_the_pinned_contract() {
+        // The exact byte sequence any signer/verifier must produce for this
+        // payload (lease-v1). Keep in sync with protocol/lease-v1/ and the
+        // Rails encoder.
+        let payload = payload(2_000, 7);
+        let bytes = canonical_payload_json(&payload);
+        assert_eq!(
+            String::from_utf8(bytes).expect("canonical json is utf-8"),
+            "{\"subject_id\":\"person-1\",\"device_id\":\"device-1\",\"not_before\":1000,\"expires_at\":2000,\"revocation_epoch\":7,\"operations\":[\"Login\",\"Unlock\"]}"
+        );
+    }
+
+    #[test]
+    fn canonical_encoding_is_drift_proofed_against_serde() {
+        // If the LeasePayload schema or serde behavior changes, this fails —
+        // the canonical encoding must then be re-pinned and version-bumped,
+        // never silently drifted.
+        let payload = payload(2_000, 7);
+        assert_eq!(
+            canonical_payload_json(&payload),
+            serde_json::to_vec(&payload).expect("serde serialization")
+        );
+    }
+
+    #[test]
+    fn canonical_encoding_escapes_defensively() {
+        let mut payload = payload(2_000, 7);
+        payload.subject_id = "quote\"and\\slash".into();
+        let bytes = canonical_payload_json(&payload);
+        let parsed: LeasePayload = serde_json::from_slice(&bytes).expect("still valid json");
+        assert_eq!(parsed.subject_id, "quote\"and\\slash");
     }
 
     #[test]

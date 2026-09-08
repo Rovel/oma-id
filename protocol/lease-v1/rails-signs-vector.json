@@ -1,0 +1,17 @@
+{
+  "contract": "oma-lease-v1",
+  "canonical_encoding": "{\"subject_id\":\"person-1\",\"device_id\":\"device-1\",\"not_before\":1000,\"expires_at\":2000,\"revocation_epoch\":7,\"operations\":[\"Login\",\"Unlock\"]}",
+  "public_key_hex": "fd1724385aa0c75b64fb78cd602fa1d991fdebf76b13c58ed702eac835e9f618",
+  "payload": {
+    "subject_id": "person-1",
+    "device_id": "device-1",
+    "not_before": 1000,
+    "expires_at": 2000,
+    "revocation_epoch": 7,
+    "operations": [
+      "Login",
+      "Unlock"
+    ]
+  },
+  "signature_hex": "edf6f46ec94042e4ee734e9a099f0212360be3018bdad9da6f86640c0fc8326f31d751bce040ce45b44ca4a30de8650637a442fa08bb4a6a1f1495b2dacd6b07"
+}
