@@ -1,18 +1,19 @@
 [package]
-name = "oma-id-agent-daemon"
+name = "oma-id-agent-store"
 version = "0.0.1"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
 
 [dependencies]
-libc.workspace = true
+ed25519-dalek = "2"
+hex = "0.4"
 oma-id-agent-core = { path = "../oma-id-agent-core" }
-oma-id-agent-ipc = { path = "../oma-id-agent-ipc" }
-oma-id-agent-store = { path = "../oma-id-agent-store" }
+serde.workspace = true
+serde_json.workspace = true
+thiserror = "2"
 
 [dev-dependencies]
-serde_json.workspace = true
 tempfile = "3"
 
 [lib]

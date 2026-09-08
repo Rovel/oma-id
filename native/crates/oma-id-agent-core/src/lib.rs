@@ -3,7 +3,9 @@
 //! Parsing, signature verification, credential checking and PAM IPC stay outside
 //! this crate. Callers may only construct a verified lease after those steps pass.
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+use serde::{Deserialize, Serialize};
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub enum Operation {
     Login,
     Unlock,

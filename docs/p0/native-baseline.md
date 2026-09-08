@@ -368,10 +368,10 @@ content, verified without touching any local disk.
 ### Next native slice
 
 Selector end-to-end on the burnt machine: DONE (owner-executed 2026-09-07,
-all green — see docs/p0/server-baseline.md). The §6.1/§6.2 consumer path is
-proven end to end: burnt ISO → ownership choice → server validation →
-Rails identity front. Remaining P0/P1 boundary work: LAN reachability from
-other devices may need a one-time host firewall allow (see
-docs/p0/server-baseline.md), then the
-Rails identity foundation (people, admin bootstrap, authentication) and
-agent-side lease store / trust-chain groundwork per oma-id_plan.md.
+all green — see docs/p0/server-baseline.md). Agent-side trust-chain
+groundwork: DONE (signed leases + lease store + store-mode fake agent,
+59 tests green — see docs/p0/agent-lease-store.md). Next: the Rails issuer
+mints signed leases with the recorded payload schema (P2 contract; the
+cross-language canonical encoding must be pinned first), then key
+distribution needs an ADR before production. LAN reachability from third
+devices may still need a host firewall allow (docs/p0/server-baseline.md).

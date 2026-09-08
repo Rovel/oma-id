@@ -31,6 +31,11 @@ remain to be reviewed before distributing anything.
 
 ## Checks and limitations
 
+- Agent-side trust-chain groundwork executed (2026-09-07): `oma-id-agent-store`
+  crate (ed25519-signed leases, revocation-epoch high-water mark, atomic JSON
+  store), `fake_agent --store` mode, 59 tests / 0 failures / 0 warnings —
+  see `docs/p0/agent-lease-store.md`.
+
 - P0 server slice executed (2026-09-07): `server/` Rails 8.1.3.1 identity
   front on Ruby 4.0.6 with Phlex/RubyUI and the `Organization` model; public
   `/.well-known/oma-enrollment` metadata (plan §11.4); 6 tests / 29
