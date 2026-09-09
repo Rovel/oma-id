@@ -27,7 +27,9 @@ tree = subprocess.run(
 archive = root / '.cache/p0/arch-pam-source.tar.gz'
 archive.parent.mkdir(parents=True, exist_ok=True)
 export = subprocess.run(
-    ['git', 'archive', '--format=tar.gz', 'HEAD', 'native'], cwd=root, capture_output=True
+    # protocol/ ships with the source so the container can verify the
+    # cross-language lease fixture (rails_vector.rs).
+    ['git', 'archive', '--format=tar.gz', 'HEAD', 'native', 'protocol'], cwd=root, capture_output=True
 )
 assert export.returncode == 0, export.stderr.decode()
 archive.write_bytes(export.stdout)
