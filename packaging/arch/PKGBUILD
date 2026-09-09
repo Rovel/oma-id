@@ -1,0 +1,60 @@
+# Maintainer: rovel <https://github.com/Rovel>
+# OMA-ID endpoint agent + PAM module (plan §23 packaging/arch definitions).
+#
+# Built from the pinned git tree (the plan's reproducible-build evidence:
+# the same tree the pinned Arch container matrix compiles). P0/P2 scope:
+# this PKGBUILD proves the package shape; publishing to a real repository
+# (the omarchy offline mirror / a repo server) is later work.
+
+pkgbase=oma-id
+pkgname=(oma-id-agent pam-oma-id)
+pkgver=0.0.1
+pkgrel=1
+pkgdesc="OMA-ID endpoint agent and PAM module for Omarchy managed workstations"
+arch=(x86_64)
+url="https://github.com/Rovel/oma-id"
+license=('AGPL-3.0-or-later')
+depends=(gcc-libs libxcrypt)          # crypt(3) FFI + ed25519 are linked in
+makedepends=(cargo rust)
+optdepends=()
+source=()
+sha256sums=()
+
+# The build context provides the source tree (git archive or a checkout);
+# this PKGBUILD expects the workspace at $srcdir/native.
+prepare() {
+    test -f "$srcdir/native/Cargo.toml" || {
+        error "expected the oma-id workspace at native/ (see packaging/arch/README.md)"
+        return 1
+    }
+}
+
+build() {
+    cd "$srcdir/native"
+    cargo build --locked --release -p oma-id-agent -p oma-id-agent-daemon
+}
+
+package_oma-id-agent() {
+    pkgdesc="OMA-ID endpoint agent (device check-ins, lease store, PAM authorization service)"
+    depends=(oma-id-agent-config libxcrypt)
+
+    install -Dm 0755 "$srcdir/native/target/release/oma-id-agent" "$pkgdir/usr/bin/oma-id-agent"
+    install -Dm 0644 "$srcdir/packaging/arch/oma-id-agent.service" \
+        "$pkgdir/usr/lib/systemd/system/oma-id-agent.service"
+    install -Dm 0644 "$srcdir/packaging/arch/oma-id-agent.json.example" \
+        "$pkgdir/usr/share/doc/oma-id-agent/oma-id-agent.json.example"
+}
+
+package_pam-oma-id() {
+    pkgdesc="OMA-ID PAM module (auth via agent credential exchange + account via lease authorization)"
+    depends=(libpam)
+
+    # The module dlopen()s libpam; install to the standard search path.
+    install -Dm 0755 "$srcdir/native/target/release/libpam_oma_id.so" \
+        "$pkgdir/usr/lib/security/pam_oma_id.so"
+}
+
+# The agent's runtime configuration is deliberately a separate concern:
+# it carries per-deployment data (server_url, device_id) that the package
+# must not overwrite on upgrade. The ISO layer and the enrollment flow
+# write /etc/oma-id-agent.json; the example file documents its shape.

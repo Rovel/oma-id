@@ -1,0 +1,8 @@
+{
+  "_comment": "oma-id-agent configuration. The agent fails closed until a real server_url and device_id are set. The device key pair is generated on first boot (its public key is printed to the journal once for out-of-band registration: bin/rails oma_id:register_device[email,device_id,public_key_hex]).",
+  "server_url": "http://192.168.1.10:3000",
+  "device_id": "workstation-1",
+  "state_dir": "/var/lib/oma-id",
+  "socket_path": "/run/oma-id/agent.sock",
+  "check_in_interval_seconds": 300
+}
