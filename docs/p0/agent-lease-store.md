@@ -100,3 +100,34 @@ Boundaries: the bearer token is a lab stand-in for the enrollment
 transaction; the issuer key is still lab seed material (ADR pending); the
 epoch is per-(subject, device) with no global revocation broadcast yet
 (the store's HWM enforces agent-side anti-rollback).
+
+## Real agent daemon + device check-ins (P2 slice, executed 2026-09-08)
+
+`oma-id-agent` (new crate + binary): the endpoint agent per §11.1/§11.2.
+Device key pair in the state dir (0600, generated on first boot, public key
+printed once for out-of-band registration), HTTPS check-ins signed with the
+device key, check-in responses applied through the verified store path
+(lease signatures against the ADR-0005 key set, anti-rollback HWM), issuer
+key set distributed via check-in, PAM socket served from the live store.
+
+Rails: `Device` model (technician pre-provisioning, §6.3),
+`POST /api/v1/device/check-ins` (key-possession auth, ±300s replay window,
+lease minting bound to the device's person, issuer key-set distribution,
+check-in audit), `oma_id:register_device` task.
+
+**Live end-to-end executed** (disposable container): agent boots → device
+key generated → check-in 401 (unregistered, fail closed) → registered →
+check-in ok (hwm increments across interval re-check-ins: 7→8) → store +
+issuer-keys.json persisted → socket bound 0600 → **probe decision Allow**
+with a server-minted lease.
+
+**Honest boundary found by the live run**: the PAM flow's credential
+exchange is denied (`auth:7`) with the real agent — the agent has no
+credential store yet. §8.1 makes credential verification the agent's job
+(against provisioned local accounts); that is the next slice. The lease
+authorization path is fully proven (probe Allow); the credential path is
+the recorded gap. Also found and fixed live: (20) the check-in epoch must
+use `next_epoch_for` (the env-pinned epoch collided with the unique index
+and 500'd); (21) the daemon's `bind` now creates the socket's parent
+directory; (22) an expired/missing lease routes through the same decision
+path (opaque denials, correct framing) instead of dropping the connection.
