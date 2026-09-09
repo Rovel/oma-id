@@ -343,6 +343,8 @@ fn main() -> ExitCode {
         trusted_time_floor,
         minimum_revocation_epoch,
         expected_credential,
+        bound_local_username: None,
+        credential_verifier: None,
     };
     if let Err(error) = oma_id_agent_daemon::serve(&config) {
         eprintln!("fake-agent: {error:?}");

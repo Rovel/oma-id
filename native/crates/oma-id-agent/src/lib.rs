@@ -19,6 +19,8 @@ use oma_id_agent_store::{
 };
 use serde::{Deserialize, Serialize};
 use sha2::Digest;
+
+pub mod provisioning;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -167,6 +169,11 @@ pub struct CheckInResponse {
     pub key_id: String,
     #[serde(default)]
     pub issuer_keys: Vec<PinnedIssuerKey>,
+    /// The server's POSIX mapping for the device's person (§8.4), present
+    /// when the person is provisioned. The agent reconciles the local
+    /// account from it.
+    #[serde(default)]
+    pub posix: Option<crate::provisioning::PosixMapping>,
 }
 
 #[derive(Clone, Debug, Deserialize)]

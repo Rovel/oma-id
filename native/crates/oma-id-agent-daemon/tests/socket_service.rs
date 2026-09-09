@@ -123,6 +123,8 @@ fn start_service_with_credential(
             trusted_time_floor,
             minimum_revocation_epoch,
             expected_credential,
+            bound_local_username: None,
+            credential_verifier: None,
         };
         serve(&config).expect("service loop");
     });
@@ -428,6 +430,8 @@ fn single_connection_handler_serves_one_exchange() {
             trusted_time_floor: now() - 60,
             minimum_revocation_epoch: 1,
             expected_credential: None,
+            bound_local_username: None,
+            credential_verifier: None,
         };
         handle_connection(&mut service, &config);
     });

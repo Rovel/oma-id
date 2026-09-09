@@ -77,6 +77,7 @@ module Api
           signature_hex:
         )
 
+        posix = PosixIdentityMapping.find_by(person: device.person)
         {
           version: 2,
           high_water_revocation_epoch: payload[:revocation_epoch],
@@ -85,7 +86,15 @@ module Api
           key_id:,
           issuer_keys: IssuerKey.where(purpose: IssuerKey::PURPOSE).map do |row|
             { key_id: row.key_id, public_key_hex: row.public_key_hex, state: row.state }
-          end
+          end,
+          posix: posix && {
+            username: posix.username,
+            uid: posix.uid,
+            gid: posix.gid,
+            home: posix.home,
+            shell: posix.shell,
+            full_name: posix.full_name
+          }
         }
       end
 

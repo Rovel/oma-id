@@ -61,6 +61,8 @@ fn start_service_with_credential(
             trusted_time_floor: now() - 60,
             minimum_revocation_epoch: 1,
             expected_credential,
+            bound_local_username: None,
+            credential_verifier: None,
         };
         serve(&config).expect("service loop");
     });

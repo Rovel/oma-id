@@ -79,6 +79,14 @@ fn apply_check_in_records_leases_and_persists_the_key_set() {
             public_key_hex: hex::encode(verifying.as_bytes()),
             state: oma_id_agent_store::KeyState::Active,
         }],
+        posix: Some(oma_id_agent::provisioning::PosixMapping {
+            username: "deviceowner".into(),
+            uid: 10001,
+            gid: 10001,
+            home: "/home/deviceowner".into(),
+            shell: "/bin/zsh".into(),
+            full_name: "Device Owner".into(),
+        }),
     };
 
     let mut store = Store::load(&dir.path().join("leases.json")).expect("empty store");

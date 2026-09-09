@@ -103,7 +103,35 @@ fn run(args: Option<&String>) -> Result<(), AgentError> {
         store.lease_count()
     );
 
+    // §8.1: credential verification + §9.1 binding. The provisioned username
+    // comes from the check-in response's POSIX mapping (the mapping exists
+    // only when the server provisioned the person).
+    let provisioned_username = response
+        .posix
+        .as_ref()
+        .map(|p| p.username.clone());
+    if let Some(username) = &provisioned_username {
+        // Provision the local account from the server mapping (§8.4):
+        // idempotent, collision-checked.
+        let mapping = response
+            .posix
+            .clone()
+            .expect("posix mapping just read");
+        if let Err(error) = oma_id_agent::provisioning::ensure_local_account(&mapping) {
+            eprintln!("oma-id-agent: local account provisioning failed (fail closed): {error}");
+            return Err(AgentError::Message(format!(
+                "local account provisioning: {error}"
+            )));
+        }
+        eprintln!(
+            "oma-id-agent: local account provisioned/verified: {username}"
+        );
+    }
+    let verifier = Arc::new(oma_id_agent::provisioning::CredentialVerifier::new());
+
     let shared_store = Arc::new(RwLock::new(store));
+    let shared_verifier = Arc::new(verifier);
+    let shared_username = Arc::new(provisioned_username);
     let shared_config = Arc::new(config);
 
     // Check-in loop (§11.2): refresh leases + key set on an interval.
@@ -141,6 +169,11 @@ fn run(args: Option<&String>) -> Result<(), AgentError> {
         "oma-id-agent: serving PAM socket {}",
         shared_config.socket_path.display()
     );
+    // A closure view of the verifier (ServiceConfig wants &dyn Fn).
+    let verifier_fn = |local_username: &str, password: &str| {
+        shared_verifier.verify(local_username, password)
+    };
+
     for stream in listener.incoming() {
         let Ok(mut stream) = stream else { continue };
         let Ok(store) = shared_store.read() else { continue };
@@ -159,24 +192,28 @@ fn run(args: Option<&String>) -> Result<(), AgentError> {
             revocation_epoch: 0,
             operations: vec![],
         };
-        let (lease, floor) = match active_lease_in(&store, now) {
+        let (lease, floor, not_before) = match active_lease_in(&store, now) {
             Some(lease) => {
                 let floor = store
                     .high_water_revocation_epoch()
                     .min(lease.revocation_epoch);
-                (lease, floor)
+                let nb = lease.not_before;
+                (lease, floor, nb)
             }
             None => {
                 expired.revocation_epoch = store.high_water_revocation_epoch();
-                (expired.verified_lease(), store.high_water_revocation_epoch())
+                let nb = expired.not_before;
+                (expired.verified_lease(), store.high_water_revocation_epoch(), nb)
             }
         };
         let config = ServiceConfig {
             socket_path: &shared_config.socket_path,
             lease,
-            trusted_time_floor: floor,
+            trusted_time_floor: not_before,
             minimum_revocation_epoch: floor,
             expected_credential: None,
+            bound_local_username: shared_username.as_deref(),
+            credential_verifier: Some(&verifier_fn),
         };
         handle_connection(&mut stream, &config);
     }

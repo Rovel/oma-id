@@ -18,9 +18,12 @@ fn main() {
         consumer: Consumer::Quickshell,
         operation: Operation::Unlock,
     };
-    oma_id_agent_ipc::write_message(&mut &stream, &AgentRequest::Authorization(request))
-        .expect("write");
+    oma_id_agent_ipc::write_message(
+        &mut stream,
+        &AgentRequest::Authorization(request),
+    )
+    .expect("write");
     let response: oma_id_agent_ipc::AgentResponse =
-        oma_id_agent_ipc::read_message(&mut &stream).expect("read");
+        oma_id_agent_ipc::read_message(&mut stream).expect("read");
     println!("decision: {:?}", response.decision);
 }

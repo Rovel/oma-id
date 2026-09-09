@@ -5,6 +5,7 @@ class Person < ApplicationRecord
   has_secure_password
 
   has_many :login_aliases, dependent: :destroy
+  has_one :posix_identity_mapping, dependent: :destroy
   has_many :sessions, dependent: :destroy
 
   enum :role, { owner: 0, identity_admin: 1, employee: 2 }, validate: true

@@ -70,9 +70,25 @@ namespace :oma_id do
       puts "Device #{device_id} already exists (#{device.state}, person #{device.person_id})."
     else
       device.update!(person:, public_key_hex:, state: "active")
+
+      # §8.4: durable POSIX mapping, allocated by the server at provisioning.
+      mapping = PosixIdentityMapping.find_or_create_by!(person:) do |m|
+        username = ENV["OMA_ID_POSIX_USERNAME"] ||
+                   PosixIdentityMapping.derive_username(email) ||
+                   raise("cannot derive a safe POSIX username from #{email}")
+        uid = PosixIdentityMapping.allocate_uid!
+        m.assign_attributes(
+          username:, uid:, gid: uid, # primary group matches the UID (user-private groups)
+          home: "/home/#{username}", shell: PosixIdentityMapping::DEFAULT_SHELL,
+          full_name: person.display_name
+        )
+      end
+      mapping.save! if mapping.changed?
+
       AuditEvent.record!(actor: "bootstrap", action: "device.register", target: device_id, result: "success",
-                         metadata: { person_email: email })
+                         metadata: { person_email: email, posix_username: mapping.username })
       puts "Registered device #{device_id} for #{email} (state=active)."
+      puts "POSIX mapping: #{mapping.username} uid=#{mapping.uid} home=#{mapping.home} shell=#{mapping.shell}"
     end
   end
 end

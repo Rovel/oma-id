@@ -131,3 +131,43 @@ use `next_epoch_for` (the env-pinned epoch collided with the unique index
 and 500'd); (21) the daemon's `bind` now creates the socket's parent
 directory; (22) an expired/missing lease routes through the same decision
 path (opaque denials, correct framing) instead of dropping the connection.
+
+## Local account provisioning + credential verification (§8.1/§8.4, executed 2026-09-09)
+
+The chain is now complete end to end. The server allocates a durable
+`PosixIdentityMapping` at device registration (managed UID/GID range
+10000-19999, derived safe username with reserved-name checks, §8.4); the
+check-in response carries the mapping; the agent provisions the local
+account via `useradd`/`groupadd` **as child processes with argument
+arrays** (§12.3 — no shell concatenation), idempotently, rejecting uid/name
+collisions instead of "fixing" them. Credential verification calls
+**libxcrypt's `crypt(3)`** — the same implementation pam_unix uses — over
+the shadow hash, constant-time compared; rate limiting (5 failures / 15 min
+→ cooldown) is enforced per local username inside the agent (§5.1).
+
+`unix_chkpwd` was evaluated first and rejected: it deliberately refuses
+direct invocation by root (built only for the setuid transition with a
+non-root real uid — an anti-oracle property), which makes it unusable for
+the root agent. The daemon's `ServiceConfig` gained `bound_local_username`
+(the lease authorizes exactly the provisioned account, §9.1) and
+`credential_verifier` (the agent's own verifier replaces the stand-in
+expected-credential).
+
+**Live end-to-end (disposable container, privileged):** register device →
+POSIX mapping `owner uid=10000` → agent check-in → **local account
+provisioned** (`owner:x:10000:10000:Organization Owner:/home/owner:/bin/zsh`
++ user-private group + home) → PAM sign-in:
+- correct local password → **`auth:0 acct:0`** (the complete chain: prompt →
+  credential exchange verified via crypt(3) → Rails-signed lease
+  authorization → PAM success)
+- wrong password → `auth:7`
+- wrong local username → `auth:7` (§9.1 binding)
+- after 5 failed attempts, the CORRECT password is denied (rate limit)
+
+The local password is a local/offline credential (§10): set locally
+(chpasswd in the demo), never synced from any web credential. Failures
+found and fixed live: (23) `groupadd --gid` needs the group NAME
+(user-private group named after the account); (24) `unix_chkpwd` refuses
+root invocation by design — crypt(3) FFI instead; (25) Arch's libxcrypt
+soname is libcrypt.so.2 (host-built binary linked .so.1 — the packaging
+slice builds on Arch properly; demo used a symlink).

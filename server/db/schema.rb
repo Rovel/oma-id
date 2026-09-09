@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_08_131453) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_09_012745) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -87,6 +87,22 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_08_131453) do
     t.datetime "updated_at", null: false
   end
 
+  create_table "posix_identity_mappings", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "full_name"
+    t.integer "gid", null: false
+    t.string "home", null: false
+    t.bigint "person_id", null: false
+    t.string "shell", null: false
+    t.integer "uid", null: false
+    t.datetime "updated_at", null: false
+    t.string "username", null: false
+    t.index ["gid"], name: "index_posix_identity_mappings_on_gid", unique: true
+    t.index ["person_id"], name: "index_posix_identity_mappings_on_person_id"
+    t.index ["uid"], name: "index_posix_identity_mappings_on_uid", unique: true
+    t.index ["username"], name: "index_posix_identity_mappings_on_username", unique: true
+  end
+
   create_table "sessions", force: :cascade do |t|
     t.datetime "created_at", null: false
     t.string "ip_address"
@@ -98,5 +114,6 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_08_131453) do
 
   add_foreign_key "devices", "people"
   add_foreign_key "login_aliases", "people"
+  add_foreign_key "posix_identity_mappings", "people"
   add_foreign_key "sessions", "people"
 end

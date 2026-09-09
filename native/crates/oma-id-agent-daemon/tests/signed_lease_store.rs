@@ -121,6 +121,8 @@ fn signed_lease_store_authorizes_through_the_socket_path() {
         trusted_time_floor: lease_floor,
         minimum_revocation_epoch: loaded.high_water_revocation_epoch(),
         expected_credential: None,
+        bound_local_username: None,
+        credential_verifier: None,
     };
     handle_connection(&mut server_stream, &config);
 

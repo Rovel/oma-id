@@ -45,6 +45,17 @@ pub struct ServiceConfig<'a> {
     /// denied; a production agent resolves this from its own verified
     /// credential store instead.
     pub expected_credential: Option<&'a str>,
+    /// The local account the bound lease authorizes (§9.1 person/device
+    /// binding, provisioned per §8.4). When set, a PAM request for any
+    /// other local username is denied through the opaque path — the lease
+    /// authorizes exactly this account.
+    pub bound_local_username: Option<&'a str>,
+    /// Credential verification delegate (§8.1): receives the PAM local
+    /// username and the presented password, verifies against the local
+    /// account store, returns the decision. When set it replaces
+    /// `expected_credential` (the stand-in). The delegate owns rate
+    /// limiting and must never log password material.
+    pub credential_verifier: Option<&'a dyn Fn(&str, &str) -> bool>,
 }
 
 /// Bind the service socket and restrict it to the owning user. Production
@@ -142,6 +153,14 @@ fn decide_authorization(
     {
         return Decision::Deny(DenialCode::NotAuthorized);
     }
+    // §9.1 person/device binding: when the bound lease provisioned a local
+    // account, the request must be for exactly that account — a lease for
+    // person A must not authorize a sign-in attempt for local account B.
+    if let Some(bound) = config.bound_local_username {
+        if request.local_username != bound {
+            return Decision::Deny(DenialCode::NotAuthorized);
+        }
+    }
     match authorize_lease(request, config) {
         Ok(()) => Decision::Allow,
         Err(_) => Decision::Deny(DenialCode::NotAuthorized),
@@ -199,14 +218,23 @@ fn decide_credential(
     {
         return Decision::Deny(DenialCode::NotAuthorized);
     }
-    // Opaque on purpose: "wrong credential", "no credential configured" and
-    // "unknown account" are indistinguishable from the client's side.
+    // Opaque on purpose: "wrong credential", "no credential configured", an
+    // unknown account and a rate-limited attempt are indistinguishable from
+    // the client's side.
+    let presented = match &request.credential {
+        Credential::Password(password) => password.as_bytes(),
+    };
+    if let Some(verify) = config.credential_verifier {
+        // §8.1: the agent verifies the local account credential itself.
+        return if verify(&request.local_username, std::str::from_utf8(presented).unwrap_or("")) {
+            Decision::Allow
+        } else {
+            Decision::Deny(DenialCode::NotAuthorized)
+        };
+    }
     let expected = match config.expected_credential {
         Some(expected) => expected,
         None => return Decision::Deny(DenialCode::NotAuthorized),
-    };
-    let presented = match &request.credential {
-        Credential::Password(password) => password.as_bytes(),
     };
     if constant_time_eq(presented, expected.as_bytes()) {
         Decision::Allow
