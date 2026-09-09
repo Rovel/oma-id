@@ -13,6 +13,7 @@ Rails.application.routes.draw do
   namespace :api do
     namespace :v1 do
       post "device/leases", to: "device_leases#create"
+      post "device/check-ins", to: "device_check_ins#create"
     end
   end
 

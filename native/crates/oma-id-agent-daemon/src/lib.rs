@@ -51,6 +51,13 @@ pub struct ServiceConfig<'a> {
 /// runs the agent as root, so a `0o600` socket keeps every non-root consumer
 /// out at the filesystem layer before peer policy even applies.
 pub fn bind(socket_path: &Path) -> io::Result<UnixListener> {
+    // Create the socket's parent directory when missing (the agent owns its
+    // runtime directory, e.g. /run/oma-id).
+    if let Some(parent) = socket_path.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent)?;
+        }
+    }
     let listener = UnixListener::bind(socket_path)?;
     std::fs::set_permissions(
         socket_path,

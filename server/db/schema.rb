@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_08_033458) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_08_131453) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -24,6 +24,19 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_08_033458) do
     t.datetime "updated_at", null: false
     t.index ["action"], name: "index_audit_events_on_action"
     t.index ["created_at"], name: "index_audit_events_on_created_at"
+  end
+
+  create_table "devices", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.string "device_id", null: false
+    t.datetime "last_check_in_at"
+    t.bigint "person_id", null: false
+    t.string "public_key_hex", null: false
+    t.string "state", default: "active", null: false
+    t.datetime "updated_at", null: false
+    t.index ["device_id"], name: "index_devices_on_device_id", unique: true
+    t.index ["person_id"], name: "index_devices_on_person_id"
+    t.index ["state"], name: "index_devices_on_state"
   end
 
   create_table "issued_leases", force: :cascade do |t|
@@ -83,6 +96,7 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_08_033458) do
     t.index ["person_id"], name: "index_sessions_on_person_id"
   end
 
+  add_foreign_key "devices", "people"
   add_foreign_key "login_aliases", "people"
   add_foreign_key "sessions", "people"
 end

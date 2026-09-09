@@ -3,6 +3,7 @@ resolver = "3"
 members = [
     "crates/oma-id-agent-core",
     "crates/oma-id-agent-daemon",
+    "crates/oma-id-agent",
     "crates/oma-id-agent-store",
     "crates/oma-id-agent-ipc",
     "crates/oma-id-pam-client",

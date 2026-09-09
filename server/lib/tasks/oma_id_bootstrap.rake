@@ -54,3 +54,25 @@ namespace :oma_id do
     puts "Owner: #{display_name} <#{email}> role=owner org=#{org_name}"
   end
 end
+
+namespace :oma_id do
+  desc "Register a managed device for a person (technician pre-provisioning, §6.3): " \
+       "bin/rails \"oma_id:register_device[email,device_id,public_key_hex]\""
+  task :register_device, %i[email device_id public_key_hex] => :environment do |_task, args|
+    email, device_id, public_key_hex = args[:email].to_s, args[:device_id].to_s, args[:public_key_hex].to_s
+
+    person = Person.joins(:login_aliases).find_by(login_aliases: { email_address: email.strip.downcase })
+    abort "oma-id: no person with alias #{email}" unless person
+    abort "oma-id: public_key_hex must be 64 hex chars" unless public_key_hex.match?(/\A[0-9a-f]{64}\z/)
+
+    device = Device.find_or_initialize_by(device_id:)
+    if device.persisted?
+      puts "Device #{device_id} already exists (#{device.state}, person #{device.person_id})."
+    else
+      device.update!(person:, public_key_hex:, state: "active")
+      AuditEvent.record!(actor: "bootstrap", action: "device.register", target: device_id, result: "success",
+                         metadata: { person_email: email })
+      puts "Registered device #{device_id} for #{email} (state=active)."
+    end
+  end
+end
