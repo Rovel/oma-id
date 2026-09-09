@@ -171,3 +171,40 @@ found and fixed live: (23) `groupadd --gid` needs the group NAME
 root invocation by design — crypt(3) FFI instead; (25) Arch's libxcrypt
 soname is libcrypt.so.2 (host-built binary linked .so.1 — the packaging
 slice builds on Arch properly; demo used a symlink).
+
+## Packaging + ISO layer (executed 2026-09-09)
+
+`packaging/arch/` (§23): `oma-id-agent.service` (systemd unit — Runtime/
+StateDirectory, §11.1 hardening that still permits provisioning; the
+P4 privileged-helper split enables stricter isolation later), the config
+example, and a PKGBUILD (`oma-id-agent` + `pam-oma-id`) documenting the
+package shapes from the pinned workspace. Repository publishing is P4/P8
+with the §13 signing decisions.
+
+The omarchy-iso layer (`oma-id-p0-standin` @ 0a51c3e) now ships the real
+agent: `/usr/bin/oma-id-agent` + the systemd unit (enabled in the live
+environment) + `/etc/oma-id-agent.json` (server UNCONFIGURED by default —
+per-deployment data, set on the live machine; the dispatch-input route was
+rejected to keep the LAN address out of public artifacts) + **the §8.2
+PAM wiring**: `/etc/pam.d/sddm`, `omarchy-lock-password`,
+`omarchy-lock-fingerprint` route auth+account through pam_oma_id.
+
+**ISO build green** (run 34307434428, image `omarchy-2026.09.09-x86_64.iso`,
+7.9G artifact): packaging-smoke (layer + bash/zsh smoke + selector
+contract + agent fail-closed CI test) and iso-build (in-build smoke on the
+installed live root) both green; provenance artifact confirms the layer
+(agent + module + harness hashes, server UNCONFIGURED, device
+workstation-1).
+
+Upstream drift handled (loudly, never silent): (26) `broadcom-wl` was
+removed from the Arch repos on 2026-09-09 — the build now drops
+mirror-missing packages from BOTH the offline-mirror download and the
+mkarchiso install list with per-package WARNINGs (nvidia-dkms also dropped
+in the run).
+
+**Remaining for the §8.2 matrix**: burn the ISO, boot on hardware, set
+`/etc/oma-id-agent.json`, restart the service, register the printed device
+key, and exercise the PAM services from the live environment (pam-test-client
++ the wired service files); the real SDDM/TTY/desktop login evidence needs
+the INSTALLED system (the live ISO boots the console installer) — the
+installed-system distribution is the P4 packaging step.
