@@ -31,6 +31,15 @@ remain to be reviewed before distributing anything.
 
 ## Checks and limitations
 
+- P3-a admin-approved device enrollment executed (2026-09-09): the device
+  posts its key + hardware identity (DMI) to
+  `POST /api/v1/enrollment-requests`, an administrator accepts in the
+  `/enrollment_requests` review UI, and the server-assigned device id drives
+  check-ins — the manual register step is gone from the ISO flow. Live chain
+  verified: request → signed possession poll → accept → active device +
+  POSIX mapping → agent check-in (hwm=1, leases=1). Rails 53 runs / 198
+  assertions / 0 failures — see `docs/p0/enrollment-transaction.md`.
+
 - Agent-side trust-chain groundwork executed (2026-09-07): `oma-id-agent-store`
   crate (ed25519-signed leases, revocation-epoch high-water mark, atomic JSON
   store), `fake_agent --store` mode, 59 tests / 0 failures / 0 warnings —
