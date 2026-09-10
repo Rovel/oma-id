@@ -19,7 +19,9 @@
 //! polling beyond the epoch carried in check-ins, no supervision. Those are
 //! later slices (plan §21 P4/P6).
 
-use oma_id_agent::{active_lease_in, apply_check_in, check_in, AgentConfig, AgentError, DeviceIdentity};
+use oma_id_agent::{
+    active_lease_in, apply_check_in, check_in, AgentConfig, AgentError, CheckInError, DeviceIdentity,
+};
 use std::path::Path;
 use oma_id_agent_daemon::{bind, handle_connection, ServiceConfig};
 use oma_id_agent_store::{LeasePayload, Store};
@@ -55,12 +57,16 @@ fn print_help() {
          \x20 oma-id-agent run --config <path>\n\
          \n\
          CONFIG (JSON):\n\
-         \x20 server_url, device_id, state_dir, socket_path,\n\
+         \x20 server_url, device_id (proposed name), state_dir, socket_path,\n\
          \x20 check_in_interval_seconds (default 300)\n\
          \n\
          The device key pair lives in <state_dir>/device.key (0600) and is\n\
-         generated on first boot; register the printed public key with\n\
-         `bin/rails oma_id:register_device[email,device_id,public_key_hex]`."
+         generated on first boot. ENROLLMENT (plan §7.2, P3-a): the agent\n\
+         posts its public key and hardware identity (manufacturer/model/\n\
+         serial from DMI) to the server and waits for an administrator to\n\
+         accept the request in the enrollment-review UI; the assigned\n\
+         device id is persisted, then check-ins begin. Re-enrollment after\n\
+         rejection needs the admin to clear the request."
     );
 }
 
@@ -93,10 +99,28 @@ fn run(args: Option<&String>) -> Result<(), AgentError> {
     }
 
     // Initial check-in: fail closed — without a successful first check-in
-    // there is no lease and the PAM surface stays unavailable.
+    // there is no lease and the PAM surface stays unavailable. A 401 means
+    // the device is not enrolled (or its key is unknown): run the P3-a
+    // enrollment transaction (§7.2), which blocks until an administrator
+    // accepts the request in the trusted browser.
     let mut store = Store::load(&config.store_path())?;
-    let response = check_in(&config.server_url, &config.device_id, &identity)
-        .map_err(|e| AgentError::Message(format!("initial check-in: {e}")))?;
+    let effective_device_id = Arc::new(RwLock::new(config.device_id.clone()));
+    let response = match check_in(&config.server_url, &config.device_id, &identity) {
+        Ok(response) => response,
+        Err(CheckInError::Rejected { status: 401, .. }) => {
+            let assigned = oma_id_agent::enrollment::ensure_enrolled(
+                &config.server_url,
+                &identity,
+                &config.state_dir,
+                &config.device_id,
+            )
+            .map_err(|e| AgentError::Message(format!("enrollment: {e}")))?;
+            *effective_device_id.write().expect("device id lock") = assigned.clone();
+            check_in(&config.server_url, &assigned, &identity)
+                .map_err(|e| AgentError::Message(format!("initial check-in: {e}")))?
+        }
+        Err(error) => return Err(AgentError::Message(format!("initial check-in: {error}"))),
+    };
     let hwm = apply_check_in(&mut store, &response, &config.key_set_path())?;
     eprintln!(
         "oma-id-agent: check-in ok (hwm={hwm}, leases={})",
@@ -146,7 +170,8 @@ fn run(args: Option<&String>) -> Result<(), AgentError> {
                 eprintln!("oma-id-agent: device identity reload failed");
                 continue;
             };
-            match check_in(&config.server_url, &config.device_id, &identity) {
+            let device_id = effective_device_id.read().expect("device id lock").clone();
+            match check_in(&config.server_url, &device_id, &identity) {
                 Ok(response) => {
                     let Ok(mut guard) = store.write() else { continue };
                     match apply_check_in(&mut guard, &response, &config.key_set_path()) {

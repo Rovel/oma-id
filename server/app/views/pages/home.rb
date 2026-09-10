@@ -58,6 +58,12 @@ module Views
               plain "Public metadata: "
               code { enrollment_metadata_url }
             end
+            if @person && (@person.owner? || @person.identity_admin?)
+              p(class: "oma-endpoint") do
+                plain "Administrator: "
+                a(href: enrollment_requests_path) { "device enrollment requests" }
+              end
+            end
           else
             render RubyUI::Card.new(class: "oma-card") do
               render RubyUI::CardContent.new(class: "oma-card-content") do

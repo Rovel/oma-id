@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_09_012745) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_09_210000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -37,6 +37,27 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_09_012745) do
     t.index ["device_id"], name: "index_devices_on_device_id", unique: true
     t.index ["person_id"], name: "index_devices_on_person_id"
     t.index ["state"], name: "index_devices_on_state"
+  end
+
+  create_table "enrollment_requests", force: :cascade do |t|
+    t.datetime "created_at", null: false
+    t.bigint "device_id"
+    t.string "device_name"
+    t.datetime "key_possession_verified_at"
+    t.string "machine_id"
+    t.string "manufacturer"
+    t.string "model"
+    t.string "nonce", null: false
+    t.bigint "person_id"
+    t.string "public_key_hex", null: false
+    t.string "requested_device_id"
+    t.string "serial_number"
+    t.string "state", default: "pending", null: false
+    t.datetime "updated_at", null: false
+    t.index ["device_id"], name: "index_enrollment_requests_on_device_id"
+    t.index ["person_id"], name: "index_enrollment_requests_on_person_id"
+    t.index ["public_key_hex"], name: "index_enrollment_requests_on_public_key_hex", unique: true
+    t.index ["state"], name: "index_enrollment_requests_on_state"
   end
 
   create_table "issued_leases", force: :cascade do |t|

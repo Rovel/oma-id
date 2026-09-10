@@ -20,6 +20,7 @@ use oma_id_agent_store::{
 use serde::{Deserialize, Serialize};
 use sha2::Digest;
 
+pub mod enrollment;
 pub mod provisioning;
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};

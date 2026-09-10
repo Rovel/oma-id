@@ -14,11 +14,21 @@ Rails.application.routes.draw do
     namespace :v1 do
       post "device/leases", to: "device_leases#create"
       post "device/check-ins", to: "device_check_ins#create"
+      # P3-a enrollment transaction, device side (see the controller).
+      # Hyphenated paths, matching the existing API shape (device/check-ins).
+      post "enrollment-requests", to: "enrollment_requests#create"
+      get "enrollment-requests/:id", to: "enrollment_requests#show", as: :enrollment_request
     end
   end
 
   # Identity front. Server-rendered Phlex; requires authentication (P1-a).
   root "pages#home"
+
+  # P3-a administrator enrollment review (plan §7.2): pending device
+  # requests, admin acceptance bound to a person, rejection, lifecycle clear.
+  resources :enrollment_requests, only: %i[index destroy] do
+    member { post :accept; post :reject }
+  end
 
   # Authentication (Rails 8 scaffold, adapted to Person + LoginAlias).
   resource :session, only: %i[new create destroy]
