@@ -48,8 +48,8 @@ description = "Prepare and seed the server database (OMA_ID_ISSUER sets the lab 
 run = "cd server && BUNDLE_PATH=$PWD/../.cache/bundle BUNDLE_USER_HOME=$PWD/../.cache/bundler bin/rails db:prepare && BUNDLE_PATH=$PWD/../.cache/bundle BUNDLE_USER_HOME=$PWD/../.cache/bundler bin/rails db:seed"
 
 [tasks."server:test"]
-description = "Run the server test suite against the Compose PostgreSQL"
-run = "cd server && BUNDLE_PATH=$PWD/../.cache/bundle BUNDLE_USER_HOME=$PWD/../.cache/bundler bin/rails test"
+description = "Run the server test suite against the Compose PostgreSQL (builds the Tailwind asset first; app/assets/builds is gitignored)"
+run = "cd server && BUNDLE_PATH=$PWD/../.cache/bundle BUNDLE_USER_HOME=$PWD/../.cache/bundler bin/rails tailwindcss:build[quiet] >/dev/null 2>&1; BUNDLE_PATH=$PWD/../.cache/bundle BUNDLE_USER_HOME=$PWD/../.cache/bundler bin/rails test"
 
 [tasks."server:up"]
 description = "Serve the P0 identity front on all interfaces (LAN lab exposure; HTTP, development only)"

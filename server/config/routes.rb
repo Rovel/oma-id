@@ -30,6 +30,13 @@ Rails.application.routes.draw do
     member { post :accept; post :reject }
   end
 
+  # Admin directory management (plan §21): people + devices + password
+  # reset. Role-gated (owner / identity_admin).
+  resources :people, only: %i[index new create destroy] do
+    member { post :reset_password }
+  end
+  resources :devices, only: %i[index new create destroy]
+
   # Authentication (Rails 8 scaffold, adapted to Person + LoginAlias).
   resource :session, only: %i[new create destroy]
 

@@ -7,6 +7,7 @@ class Person < ApplicationRecord
   has_many :login_aliases, dependent: :destroy
   has_one :posix_identity_mapping, dependent: :destroy
   has_many :sessions, dependent: :destroy
+  has_many :devices, dependent: :restrict_with_error
 
   enum :role, { owner: 0, identity_admin: 1, employee: 2 }, validate: true
 

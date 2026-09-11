@@ -17,6 +17,13 @@ gem "puma", ">= 5.0"
 gem "phlex", "2.4.1"
 gem "phlex-rails", "2.4.0"
 gem "ruby_ui", "1.6.0"
+# RubyUI asset pipeline (closes the "RubyUI asset checks" item): Tailwind v4
+# build + Stimulus controllers (Combobox, DataTable) + Turbo Frames via
+# importmap (no Node build step).
+gem "importmap-rails"
+gem "stimulus-rails"
+gem "turbo-rails"
+gem "tailwindcss-rails"
 # Ed25519 signing for OMA-ID leases (agent-side verify uses ed25519-dalek)
 gem "ed25519", "1.4.0"
 
@@ -48,5 +55,6 @@ end
 group :development do
   # See https://guides.rubyonrails.org/debugging_rails_applications.html#debugging-with-the-debug-gem
   gem "web-console"
+  gem "tidewave"
 end
 gem "tailwind_merge", "~> 1.5"

@@ -20,7 +20,7 @@ module Views
       def view_template
         div(class: "oma-container") do
           header(class: "oma-header") do
-            render RubyUI::Badge.new(class: "oma-badge") { "OMA-ID" }
+            render RubyUI::Badge.new(class: "oma-badge w-full") { "OMA-ID" }
             h1 { org_name }
             if @person
               span(class: "oma-person") do

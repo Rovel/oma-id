@@ -10,23 +10,17 @@ module Views
     class Index < Views::Base
       include Phlex::Rails::Helpers::Routes
 
-      def initialize(pending:, resolved:)
+      def initialize(pending:, resolved:, people:)
         @pending = pending
         @resolved = resolved
+        @people = people
         @person = Current.person
         super()
       end
 
       def view_template
-        div(class: "oma-container") do
-          header(class: "oma-header") do
-            render RubyUI::Badge.new(class: "oma-badge") { "OMA-ID" }
-            h1 { "Device enrollment requests" }
-            if @person
-              span(class: "oma-person") { plain "#{@person.display_name} (#{@person.role})" }
-            end
-            a(href: root_path, class: "oma-signout") { "Back" }
-          end
+        div(class: "oma-container oma-admin") do
+          admin_header("Enrollment requests")
 
           p(class: "oma-endpoint") do
             plain "A pending request has no organizational access (plan §7.3). Acceptance requires a "
@@ -101,18 +95,35 @@ module Views
       def accept_form(request)
         form(action: accept_enrollment_request_path(request), method: "post", class: "oma-inline-form") do
           input(type: "hidden", name: "authenticity_token", value: form_authenticity_token)
-          input(type: "text", name: "person_email", placeholder: "person email (login alias)",
-                required: true, class: "oma-input")
+          # §7.2 step 2: the administrator reviews and binds the device to a
+          # person. The combobox lists every person's primary alias — no
+          # email memorization, no typo surface.
+          div(class: "oma-combobox-slot") do
+            render RubyUI::Combobox.new(class: "w-64") do
+              render RubyUI::ComboboxInputTrigger.new(placeholder: "Choose person…")
+              render RubyUI::ComboboxPopover.new do
+                render RubyUI::ComboboxList.new do
+                  render RubyUI::ComboboxEmptyState.new { "No person matches." }
+                  @people.each do |person|
+                    render RubyUI::ComboboxItem.new do
+                      render RubyUI::ComboboxRadio.new(name: "person_email", value: person.primary_email)
+                      span { "#{person.display_name} <#{person.primary_email}>" }
+                    end
+                  end
+                end
+              end
+            end
+          end
           input(type: "text", name: "device_id", value: request.requested_device_id || "",
                 placeholder: "device id", required: true, class: "oma-input")
-          button(type: "submit", class: "oma-accept") { "Accept" }
+          render RubyUI::Button.new(type: "submit", class: "oma-accept") { "Accept" }
         end
       end
 
       def reject_form(request)
         form(action: reject_enrollment_request_path(request), method: "post", class: "oma-inline-form") do
           input(type: "hidden", name: "authenticity_token", value: form_authenticity_token)
-          button(type: "submit", class: "oma-signout") { "Reject" }
+          render RubyUI::Button.new(variant: :destructive, type: "submit") { "Reject" }
         end
       end
 
@@ -120,7 +131,7 @@ module Views
         form(action: enrollment_request_path(request), method: "post", class: "oma-inline-form") do
           input(type: "hidden", name: "_method", value: "delete")
           input(type: "hidden", name: "authenticity_token", value: form_authenticity_token)
-          button(type: "submit", class: "oma-signout") { "Clear (allows a new request)" }
+          render RubyUI::Button.new(variant: :outline, type: "submit") { "Clear (allows a new request)" }
         end
       end
     end

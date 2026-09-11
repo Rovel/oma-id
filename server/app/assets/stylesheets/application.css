@@ -51,3 +51,11 @@ code { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.9em;
 .oma-accept { padding: 0.4rem 0.9rem; background: #18181b; color: #fff; border: 0; border-radius: 0.375rem; font-size: 0.9rem; cursor: pointer; }
 .oma-accept:hover { background: #3f3f46; }
 .oma-flash { max-width: 42rem; margin: 0.75rem auto 0; padding: 0 1.25rem; }
+
+/* Admin chrome (P1-b directory management) */
+.oma-admin-nav { display: flex; gap: 0.25rem; margin-left: 1rem; }
+.oma-admin-nav-link { padding: 0.25rem 0.6rem; border-radius: 0.375rem; font-size: 0.9rem; color: #52525b; text-decoration: none; }
+.oma-admin-nav-link:hover { background: #f4f4f5; }
+.oma-admin-nav-link.active { background: #18181b; color: #fff; }
+.oma-password { font-size: 1.05rem; padding: 0.35rem 0.6rem; }
+.oma-combobox-slot { flex: 0 0 16rem; }

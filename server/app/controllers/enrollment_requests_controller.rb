@@ -5,13 +5,15 @@
 # enrollment requests — hardware identity, key-possession status — and bind
 # an acceptance to a person (§7.2 step 4). Owner or identity_admin only.
 class EnrollmentRequestsController < ApplicationController
-  before_action :require_identity_admin
+  include AdminRequired
+
   before_action :set_request, only: %i[accept reject destroy]
 
   def index
     render Views::EnrollmentRequests::Index.new(
       pending: EnrollmentRequest.pending.recent_first,
-      resolved: EnrollmentRequest.where.not(state: "pending").recent_first.limit(50)
+      resolved: EnrollmentRequest.where.not(state: "pending").recent_first.limit(50),
+      people: Person.order(:display_name).includes(:login_aliases)
     ), layout: "application"
   end
 
@@ -52,16 +54,6 @@ class EnrollmentRequestsController < ApplicationController
 
   def find_person(email)
     Person.joins(:login_aliases).find_by(login_aliases: { email_address: email.strip.downcase })
-  end
-
-  def actor_name
-    "admin:#{Current.person&.primary_email || 'unknown'}"
-  end
-
-  def require_identity_admin
-    person = Current.person
-    allowed = person.respond_to?(:owner?) && (person.owner? || person.identity_admin?)
-    redirect_to root_path, alert: "Administrator role required." unless allowed
   end
 
   def set_request
