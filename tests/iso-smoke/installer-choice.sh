@@ -146,10 +146,10 @@ validate() {
 }
 
 save_choice() {
-  local mode="$1" server="$2" note="$3"
+  local mode="$1" server="$2" note="$3" device="${4:-}"
   mkdir -p "$CHOICE_DIR"
-  jq -n --arg mode "$mode" --arg server "$server" --arg note "$note" \
-    '{mode: $mode, server: $server, note: $note}' >"$CHOICE_FILE"
+  jq -n --arg mode "$mode" --arg server "$server" --arg note "$note" --arg device "$device" \
+    '{mode: $mode, server: $server, note: $note, device: $device}' >"$CHOICE_FILE"
   oma_say "Recorded $CHOICE_FILE (live environment; consumed by the target provisioning step)."
 }
 
@@ -179,18 +179,34 @@ interactive() {
     echo
   done
 
+  # Name the machine (§7.2 step 1 device details): becomes the installed
+  # system's hostname AND the enrollment proposal — set once, here.
+  oma_step "Name this machine"
+  oma_say "Used as the hostname of the installed system and proposed as its"
+  oma_say "device id at enrollment (the administrator can still rename it)."
+  echo
+  while true; do
+    machine=$(gum input --placeholder "workstation-1" --value "${OMA_ID_DEVICE:-workstation-1}" \
+      --prompt "Machine name> ") || oma_abort_choice
+    machine=$(printf '%s' "$machine" | tr '[:upper:]' '[:lower:]' | tr -d ' ')
+    if printf '%s' "$machine" | grep -qE '^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$'; then
+      break
+    fi
+    oma_say "Use letters, digits, and dashes (no leading or trailing dash)."
+  done
+
   # P3-a: the installed system self-enrolls on first boot — the agent posts
   # its key + hardware identity and an administrator accepts it in the
   # server's review UI. The user decides explicitly (§6.4): enroll the
   # managed install, or continue as personal. Never silent.
   echo
   if gum confirm --padding "0 0 0 $OMA_PADDING" "Set up OMA-ID management on the installed system?"; then
-    save_choice "work-school" "$url" "installed system will self-enroll on first boot; admin acceptance required"
-    oma_say "The installed system will enroll with this server on first boot."
+    save_choice "work-school" "$url" "installed system will self-enroll on first boot; admin acceptance required" "$machine"
+    oma_say "The installed system (hostname: $machine) will enroll on first boot."
     oma_say "An administrator must accept the device in the server's enrollment review."
     return 0
   fi
-  save_choice "work-school-personal" "$url" "server validated; user chose to continue as personal (§6.4 explicit)"
+  save_choice "work-school-personal" "$url" "server validated; user chose to continue as personal (§6.4 explicit)" "$machine"
   oma_say "Continuing as a personal install — no OMA-ID management will be installed."
 }
 

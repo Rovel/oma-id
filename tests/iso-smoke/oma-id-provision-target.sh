@@ -36,13 +36,18 @@ if [[ "$mode" != "work-school" ]]; then
   exit 0
 fi
 
-# The server URL comes from the §6.2-validated choice unless given.
+# The server URL and device name come from the §6.2-validated choice
+# (STEP 0 names the machine) unless given explicitly.
 if [[ -z "$server_url" ]]; then
   server_url=$(jq -r '.server // empty' "$choice_file")
 fi
 if [[ -z "$server_url" ]]; then
   echo "oma-id-provision-target: no validated server URL in the choice file" >&2
   exit 1
+fi
+if [[ -z "$device_id" || "$device_id" == "workstation-1" ]]; then
+  chosen=$(jq -r '.device // empty' "$choice_file")
+  [[ -n "$chosen" ]] && device_id="$chosen"
 fi
 
 # The live environment already has the pinned artifacts at their system
