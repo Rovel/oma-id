@@ -29,39 +29,39 @@ module Views
             end
 
             div(class: "rounded-md border overflow-x-auto") do
-              render RubyUI::Table.new do
-                render RubyUI::TableHeader do
-                  render RubyUI::TableRow do
-                    render RubyUI::TableHead { "Added" }
-                    render RubyUI::TableHead { "Name" }
-                    render RubyUI::TableHead { "Email (login alias)" }
-                    render RubyUI::TableHead { "Role" }
-                    render RubyUI::TableHead { "Devices" }
-                    render RubyUI::TableHead(class: "text-right") { "Actions" }
+              data_table_markup do
+                thead(class: "[&_tr]:border-b") do
+                  table_row do
+                    table_head { "Added" }
+                    table_head { "Name" }
+                    table_head { "Email (login alias)" }
+                    table_head { "Role" }
+                    table_head { "Devices" }
+                    table_head(class: "text-right") { "Actions" }
                   end
                 end
-                render RubyUI::TableBody do
+                tbody(class: "[&_tr:last-child]:border-0") do
                   if @people.empty?
-                    render RubyUI::TableRow do
-                      render RubyUI::TableCell(colspan: 6) do
+                    table_row do
+                      table_cell(colspan: 6) do
                         p(class: "p-4 text-sm text-muted-foreground") { "No people match." }
                       end
                     end
                   end
                   @people.each do |person|
-                    render RubyUI::TableRow do
-                      render RubyUI::TableCell(class: "text-sm text-muted-foreground") do
+                    table_row do
+                      table_cell(class: "text-sm text-muted-foreground") do
                         person.created_at.strftime("%Y-%m-%d")
                       end
-                      render RubyUI::TableCell(class: "font-medium") { person.display_name }
-                      render RubyUI::TableCell { code { person.primary_email.to_s } }
-                      render RubyUI::TableCell do
+                      table_cell(class: "font-medium") { person.display_name }
+                      table_cell { code { person.primary_email.to_s } }
+                      table_cell do
                         render RubyUI::Badge.new(variant: person.role == "employee" ? :secondary : :outline) do
                           person.role
                         end
                       end
-                      render RubyUI::TableCell(class: "text-sm") { person.devices.count.to_s }
-                      render RubyUI::TableCell(class: "text-right space-x-2") do
+                      table_cell(class: "text-sm") { person.devices.count.to_s }
+                      table_cell(class: "text-right space-x-2") do
                         form(action: reset_password_person_path(person), method: "post", class: "inline") do
                           input(type: "hidden", name: "authenticity_token", value: form_authenticity_token)
                           render RubyUI::Button.new(variant: :outline, size: :sm, type: "submit") { "Reset password" }

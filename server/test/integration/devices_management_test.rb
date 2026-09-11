@@ -15,6 +15,19 @@ class DevicesManagementTest < ActionDispatch::IntegrationTest
     sign_in_as(@admin, password: "correct-horse")
   end
 
+  test "devices directory defaults invalid page values to the first page" do
+    @admin.devices.create!(device_id: "first-page-device", public_key_hex: "d" * 64, state: "active")
+
+    get devices_path
+    assert_response :ok
+    assert_select "td", text: "first-page-device"
+    assert_select "table tbody td form", minimum: 1
+
+    get devices_path, params: { page: -1 }
+    assert_response :ok
+    assert_select "td", text: "first-page-device"
+  end
+
   test "admin registers a device out-of-band (technician §6.3 path)" do
     post devices_path, params: { person_email: "ada@lab.test", device_id: "tech-reg-1",
                                  public_key_hex: "a" * 64 }

@@ -28,39 +28,39 @@ module Views
             end
 
             div(class: "rounded-md border overflow-x-auto") do
-              render RubyUI::Table.new do
-                render RubyUI::TableHeader do
-                  render RubyUI::TableRow do
-                    render RubyUI::TableHead { "Device id" }
-                    render RubyUI::TableHead { "State" }
-                    render RubyUI::TableHead { "Person" }
-                    render RubyUI::TableHead { "Key" }
-                    render RubyUI::TableHead { "Last check-in" }
-                    render RubyUI::TableHead(class: "text-right") { "Actions" }
+              data_table_markup do
+                thead(class: "[&_tr]:border-b") do
+                  table_row do
+                    table_head { "Device id" }
+                    table_head { "State" }
+                    table_head { "Person" }
+                    table_head { "Key" }
+                    table_head { "Last check-in" }
+                    table_head(class: "text-right") { "Actions" }
                   end
                 end
-                render RubyUI::TableBody do
+                tbody(class: "[&_tr:last-child]:border-0") do
                   if @devices.empty?
-                    render RubyUI::TableRow do
-                      render RubyUI::TableCell(colspan: 6) do
+                    table_row do
+                      table_cell(colspan: 6) do
                         p(class: "p-4 text-sm text-muted-foreground") { "No devices match." }
                       end
                     end
                   end
                   @devices.each do |device|
-                    render RubyUI::TableRow do
-                      render RubyUI::TableCell(class: "font-medium") { code { device.device_id } }
-                      render RubyUI::TableCell do
+                    table_row do
+                      table_cell(class: "font-medium") { code { device.device_id } }
+                      table_cell do
                         render RubyUI::Badge.new(variant: device.active? ? :default : :destructive) do
                           device.state
                         end
                       end
-                      render RubyUI::TableCell { code { device.person.primary_email.to_s } }
-                      render RubyUI::TableCell { code { "#{device.public_key_hex[0, 12]}…" } }
-                      render RubyUI::TableCell(class: "text-sm text-muted-foreground") do
+                      table_cell { code { device.person.primary_email.to_s } }
+                      table_cell { code { "#{device.public_key_hex[0, 12]}…" } }
+                      table_cell(class: "text-sm text-muted-foreground") do
                         device.last_check_in_at ? device.last_check_in_at.strftime("%Y-%m-%d %H:%M") : "never"
                       end
-                      render RubyUI::TableCell(class: "text-right") do
+                      table_cell(class: "text-right") do
                         form(action: device_path(device), method: "post", class: "inline") do
                           input(type: "hidden", name: "_method", value: "delete")
                           input(type: "hidden", name: "authenticity_token", value: form_authenticity_token)

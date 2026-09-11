@@ -15,6 +15,17 @@ class PeopleManagementTest < ActionDispatch::IntegrationTest
     sign_in_as(@admin, password: "correct-horse")
   end
 
+  test "people directory defaults invalid page values to the first page" do
+    get people_path
+    assert_response :ok
+    assert_select "td", text: "Ada Admin"
+    assert_select "table tbody td form", minimum: 1
+
+    get people_path, params: { page: -1 }
+    assert_response :ok
+    assert_select "td", text: "Ada Admin"
+  end
+
   test "admin creates a person with a generated password shown once" do
     post people_path, params: { display_name: "New Employee", email_address: "new@lab.test",
                                 role: "employee", password: "" }

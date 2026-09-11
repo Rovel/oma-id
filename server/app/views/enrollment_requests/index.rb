@@ -5,15 +5,17 @@ module Views
     # P3-a administrator enrollment review (plan §7.2 steps 2-4): pending
     # device requests with their hardware identity and key-possession status,
     # an accept form binding the device to a person (§7.2 step 4), and the
-    # resolved history. Shows exactly what the administrator needs to judge
-    # the request — nothing more.
+    # resolved history in a searchable, paginated DataTable.
     class Index < Views::Base
       include Phlex::Rails::Helpers::Routes
 
-      def initialize(pending:, resolved:, people:)
-        @pending = pending
-        @resolved = resolved
+      def initialize(requests:, people:, search:, page:, per_page:, total_count:)
+        @requests = requests
         @people = people
+        @search = search
+        @page = page
+        @per_page = per_page
+        @total_count = total_count
         @person = Current.person
         super()
       end
@@ -27,21 +29,46 @@ module Views
             plain "device-signed status poll first (key-possession proof, §7.2 step 4)."
           end
 
-          unless @pending.empty?
-            h2 { "Pending" }
-            @pending.each { |request| request_card(request, pending: true) }
-          end
+          render RubyUI::DataTable.new(id: "enrollment-requests") do
+            render RubyUI::DataTableToolbar.new do
+              render RubyUI::DataTableSearch.new(
+                path: enrollment_requests_path,
+                value: @search,
+                placeholder: "Search device, hardware, key, or state…"
+              )
+            end
 
-          unless @resolved.empty?
-            h2 { "Resolved" }
-            @resolved.each { |request| request_card(request, pending: false) }
-          end
-
-          if @pending.empty? && @resolved.empty?
-            render RubyUI::Card.new(class: "oma-card") do
-              render RubyUI::CardContent.new(class: "oma-card-content") do
-                p { "No enrollment requests yet. A device posts one on first contact with the server." }
+            div(class: "rounded-md border overflow-x-auto") do
+              data_table_markup do
+                thead(class: "[&_tr]:border-b") do
+                  table_row do
+                    table_head(class: "w-10") { "" }
+                    table_head { "Device" }
+                    table_head { "State" }
+                    table_head { "Key possession" }
+                    table_head { "Hardware" }
+                    table_head { "Posted" }
+                    table_head { "Outcome" }
+                  end
+                end
+                tbody(class: "[&_tr:last-child]:border-0") do
+                  empty_row if @requests.empty?
+                  @requests.each { |request| request_rows(request) }
+                end
               end
+            end
+
+            render RubyUI::DataTablePaginationBar.new do
+              div(class: "text-sm text-muted-foreground") do
+                plain "Showing #{@requests.size} of #{@total_count} request(s)."
+              end
+              render RubyUI::DataTablePagination.new(
+                page: @page,
+                per_page: @per_page,
+                total_count: @total_count,
+                path: enrollment_requests_path,
+                query: { search: @search }
+              )
             end
           end
         end
@@ -49,47 +76,109 @@ module Views
 
       private
 
-      def request_card(request, pending:)
-        render RubyUI::Card.new(class: "oma-card") do
-          render RubyUI::CardHeader.new(class: "oma-card-header") do
-            render RubyUI::CardTitle.new { request.device_name || "Unnamed device" }
-            render RubyUI::CardDescription.new do
-              plain "request ##{request.id} · #{request.state}"
-              if request.key_possession_verified?
-                plain " · key possession VERIFIED #{request.key_possession_verified_at.strftime('%Y-%m-%d %H:%M')}"
+      def empty_row
+        table_row do
+          table_cell(colspan: 7) do
+            p(class: "p-4 text-sm text-muted-foreground") do
+              if @search.present?
+                plain "No enrollment requests match."
               else
-                plain " · key possession NOT verified (device must poll its status)"
+                plain "No enrollment requests yet. A device posts one on first contact with the server."
               end
-            end
-          end
-          render RubyUI::CardContent.new(class: "oma-card-content") do
-            dl(class: "oma-facts") do
-              dt { "Manufacturer / model" }
-              dd { [request.manufacturer, request.model].compact.join(" · ").presence || "unknown" }
-              dt { "Serial number" }
-              dd { code { request.serial_number || "unknown" } }
-              dt { "Machine ID" }
-              dd { code { request.machine_id || "unknown" } }
-              dt { "Public key" }
-              dd { code { "#{request.public_key_hex[0, 32]}…" } }
-              dt { "Requested device id" }
-              dd { code { request.requested_device_id || "none" } }
-              dt { "Posted" }
-              dd { request.created_at.strftime("%Y-%m-%d %H:%M") }
-              if request.device
-                dt { "Enrolled device" }
-                dd { code { request.device.device_id } }
-              end
-            end
-
-            if pending
-              accept_form(request)
-              reject_form(request)
-            elsif request.state != "accepted"
-              clear_form(request)
             end
           end
         end
+      end
+
+      def request_rows(request)
+        detail_id = "enrollment-request-#{request.id}-details"
+
+        table_row do
+          table_cell do
+            render RubyUI::DataTableExpandToggle.new(
+              controls: detail_id,
+              label: "Show details for request #{request.id}",
+              title: "Show request details"
+            )
+          end
+          table_cell(class: "font-medium") do
+            div { request.device_name.presence || "Unnamed device" }
+            div(class: "text-xs text-muted-foreground") { "Request ##{request.id}" }
+          end
+          table_cell do
+            render RubyUI::Badge.new(variant: state_variant(request), size: :sm) { request.state }
+          end
+          table_cell do
+            render RubyUI::Badge.new(
+              variant: request.key_possession_verified? ? :success : :warning,
+              size: :sm
+            ) do
+              request.key_possession_verified? ? "Verified" : "Not verified"
+            end
+          end
+          table_cell(class: "text-sm") do
+            plain hardware_name(request)
+          end
+          table_cell(class: "text-sm text-muted-foreground whitespace-nowrap") do
+            request.created_at.strftime("%Y-%m-%d %H:%M")
+          end
+          table_cell(class: "text-sm") { outcome(request) }
+        end
+
+        table_row(id: detail_id, class: "hidden bg-muted/20 hover:bg-muted/20") do
+          table_cell(colspan: 7, class: "p-4") do
+            dl(class: "grid gap-x-6 gap-y-3 sm:grid-cols-2 lg:grid-cols-3") do
+              detail("Manufacturer / model") { hardware_name(request) }
+              detail("Serial number") { code { request.serial_number.presence || "unknown" } }
+              detail("Machine ID") { code { request.machine_id.presence || "unknown" } }
+              detail("Public key") { code { "#{request.public_key_hex[0, 32]}…" } }
+              detail("Requested device id") { code { request.requested_device_id.presence || "none" } }
+              detail("Key-possession proof") do
+                if request.key_possession_verified?
+                  plain "Verified #{request.key_possession_verified_at.strftime('%Y-%m-%d %H:%M')}"
+                else
+                  plain "Not verified — the device must poll its status"
+                end
+              end
+              if request.device
+                detail("Enrolled device") { code { request.device.device_id } }
+              end
+            end
+
+            div(class: "mt-4") do
+              if request.pending?
+                accept_form(request)
+                reject_form(request)
+              elsif request.state != "accepted"
+                clear_form(request)
+              else
+                p(class: "text-sm text-muted-foreground") { "This request has been accepted." }
+              end
+            end
+          end
+        end
+      end
+
+      def detail(label)
+        div do
+          dt(class: "text-xs font-medium text-muted-foreground") { label }
+          dd(class: "mt-1 text-sm break-all") { yield }
+        end
+      end
+
+      def hardware_name(request)
+        [ request.manufacturer, request.model ].compact_blank.join(" · ").presence || "Unknown"
+      end
+
+      def state_variant(request)
+        { "pending" => :warning, "accepted" => :success, "rejected" => :destructive }.fetch(request.state, :outline)
+      end
+
+      def outcome(request)
+        return request.device.device_id if request.device
+        return "Awaiting review" if request.pending?
+
+        "Not enrolled"
       end
 
       def accept_form(request)

@@ -7,13 +7,32 @@
 class EnrollmentRequestsController < ApplicationController
   include AdminRequired
 
+  PER_PAGE = 10
+
   before_action :set_request, only: %i[accept reject destroy]
 
   def index
+    scope = EnrollmentRequest.includes(:device)
+    scope = scope.where(
+      <<~SQL.squish,
+        state ILIKE :term OR device_name ILIKE :term OR requested_device_id ILIKE :term OR
+        machine_id ILIKE :term OR serial_number ILIKE :term OR manufacturer ILIKE :term OR
+        model ILIKE :term OR public_key_hex ILIKE :term
+      SQL
+      term: "%#{EnrollmentRequest.sanitize_sql_like(params[:search].to_s)}%"
+    ) if search?
+    scope = scope.order(Arel.sql("CASE state WHEN 'pending' THEN 0 ELSE 1 END"), created_at: :desc)
+    total_count = scope.count
+    page = [ params.fetch(:page, 1).to_i, 1 ].max
+    requests = scope.offset((page - 1) * PER_PAGE).limit(PER_PAGE)
+
     render Views::EnrollmentRequests::Index.new(
-      pending: EnrollmentRequest.pending.recent_first,
-      resolved: EnrollmentRequest.where.not(state: "pending").recent_first.limit(50),
-      people: Person.order(:display_name).includes(:login_aliases)
+      requests:,
+      people: Person.order(:display_name).includes(:login_aliases),
+      search: params[:search].to_s,
+      page:,
+      per_page: PER_PAGE,
+      total_count:
     ), layout: "application"
   end
 
@@ -51,6 +70,10 @@ class EnrollmentRequestsController < ApplicationController
   end
 
   private
+
+  def search?
+    params[:search].present?
+  end
 
   def find_person(email)
     Person.joins(:login_aliases).find_by(login_aliases: { email_address: email.strip.downcase })

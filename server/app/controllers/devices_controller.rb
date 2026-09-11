@@ -18,7 +18,7 @@ class DevicesController < ApplicationController
     scope = Device.order(:created_at).includes(:person)
     scope = scope.where("device_id LIKE ?", "%#{Device.sanitize_sql_like(params[:search].to_s)}%") if search?
     @total_count = scope.count
-    @page = params[:page].to_i
+    @page = [ params.fetch(:page, 1).to_i, 1 ].max
     @per_page = PER_PAGE
     @devices = scope.offset((@page - 1) * @per_page).limit(@per_page)
     render Views::Devices::Index.new(devices: @devices, search: params[:search].to_s,

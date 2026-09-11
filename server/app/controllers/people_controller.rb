@@ -19,7 +19,7 @@ class PeopleController < ApplicationController
     scope = scope.joins(:login_aliases).where("login_aliases.email_address LIKE ?", "%#{sanitized_search}%")
                  .or(scope.where("display_name LIKE ?", "%#{sanitized_search}%")) if search?
     @total_count = scope.count
-    @page = params[:page].to_i
+    @page = [ params.fetch(:page, 1).to_i, 1 ].max
     @per_page = PER_PAGE
     @people = scope.offset((@page - 1) * @per_page).limit(@per_page).includes(:login_aliases)
     render Views::People::Index.new(people: @people, search: params[:search].to_s,

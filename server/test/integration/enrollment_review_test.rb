@@ -28,9 +28,26 @@ class EnrollmentReviewTest < ActionDispatch::IntegrationTest
 
     get enrollment_requests_path
     assert_response :ok
+    assert_select "turbo-frame#enrollment-requests"
+    assert_select "input[type=search][name=search]"
+    assert_select "table tbody td form", minimum: 2
     assert_match "Burnt PC", response.body
     assert_match "PRIME B550M", response.body
-    assert_match "NOT verified", response.body
+    assert_match "Not verified", response.body
+  end
+
+  test "the enrollment table searches requests and normalizes invalid pages" do
+    EnrollmentRequest.record!(public_key_hex: @key_hex, device_name: "Burnt PC", serial_number: "SN123456")
+    EnrollmentRequest.record!(public_key_hex: SecureRandom.hex(32), device_name: "Other device")
+
+    get enrollment_requests_path, params: { search: "SN123456" }
+    assert_response :ok
+    assert_match "Burnt PC", response.body
+    assert_no_match "Other device", response.body
+
+    get enrollment_requests_path, params: { page: -1 }
+    assert_response :ok
+    assert_match "Burnt PC", response.body
   end
 
   test "acceptance requires a person and a device id" do
