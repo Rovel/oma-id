@@ -50,7 +50,7 @@ This slice implements the unattended/admin-approval mode:
 - Agent fail-closed: unreachable server → non-zero exit, no socket (CI
   smoke unchanged); rejection → terminal error, nothing recorded.
 
-## Live verification (2026-09-09)
+## Live verification (2026-09-09, dev machine)
 
 1. Fresh agent (tmpfs-like state dir, WSL, no DMI): `device not enrolled —
    requesting enrollment (Device (machine-id 3846…))` → `enrollment request
@@ -65,6 +65,40 @@ This slice implements the unattended/admin-approval mode:
    unprivileged demo agent → **fail closed, no socket** (expected; the
    systemd agent runs as root, and the §8.1/§8.4 provisioning chain is
    container-verified from the earlier slice).
+
+## Live verification (2026-09-11, real hardware)
+
+Live ISO `omarchy-2026.09.10-x86_64.iso` (locally built, pin `18acf18`)
+booted on a physical laptop; only the server URL was written to
+`/etc/oma-id-agent.json`. The self-enrollment flow then ran without any
+manual key extraction:
+
+1. **Request posted by the machine itself** (02:53): real DMI identity
+   (manufacturer, model, serial number, machine-id — hardware-specific
+   values deliberately scrubbed from this public repo), requested id
+   `workstation-1` — the review UI showed the full hardware identity the
+   administrator judged.
+2. **Possession stamped by the signed poll** at 02:53:19 (the review UI
+   showed `key possession VERIFIED` before the administrator acted).
+3. **Accepted in the browser review UI** at 03:09:29 (actor
+   `admin:owner@oma-id.invalid` — the P1-a session path, role-gated):
+   device `workstation-1` bound to the owner, `active`, POSIX mapping
+   `owner` uid=10000 home=/home/owner.
+4. **Agent adopted the assigned id within seconds**: `enrollment accepted —
+   device id 'workstation-1' assigned` → `check-in ok` → leases epochs 31
+   and 32 issued and verified; server-side audit `enrollment.request` /
+   `enrollment.accept` both success.
+5. Server-side evidence: `Device.find_by(device_id: "workstation-1")`
+   carries exactly the accepted key; `last_check_in_at` 03:09:37.
+
+Note: on the live ISO the device key + enrollment record are tmpfs, so a
+live reboot posts a fresh request (new key → the old accepted request stays
+accepted but inert; each new key gets its own §7.3 lifecycle). The installed
+system is the persistent target.
+
+Remaining for the full consumer path on this machine: set the local
+password (`chpasswd`) and exercise PAM (pam-test-client, then the wired
+SDDM/lock screens).
 
 ## Suites
 
