@@ -23,40 +23,51 @@ CHOICE_DIR="/run/oma-id"
 CHOICE_FILE="$CHOICE_DIR/standin-choice.json"
 OMA_LOGO="${OMARCHY_PATH:-/root/omarchy}/logo.txt"
 
-# --- visual language (replica of the omarchy installer helpers) ---
-measure_terminal() {
-  TERM_WIDTH=${COLUMNS:-$(tput cols 2>/dev/null || echo 80)}
-  LOGO_WIDTH=$(awk '{ if (length > max) max = length } END { print max+0 }' "$OMA_LOGO" 2>/dev/null || echo 0)
-  PADDING_LEFT=$(((TERM_WIDTH - LOGO_WIDTH) / 2))
-  if [[ $PADDING_LEFT -lt 0 ]]; then PADDING_LEFT=0; fi
+# --- visual language (oma_-namespaced; NEVER shadow the upstream
+# configurator's step/clear_logo/oma_say — this script runs inside the same
+# shell, and redefining those names used to replace the Omarchy
+# presentation for every configurator oma_step after ours, which is what the
+# burnt-machine session showed: keyboard/user/timezone losing the theme).
+# Inside the configurator the REAL upstream clear_logo and PADDING_LEFT are
+# already in scope (helpers/all.sh is sourced before we run); use them. The
+# oma_ replicas exist only for the standalone CI smoke run.
+oma_padding() {
+  OMA_PADDING=${PADDING_LEFT:-$((($(tput cols 2>/dev/null || echo 80) - 20) / 2))}
+  [[ $OMA_PADDING -lt 0 ]] && OMA_PADDING=0
 }
 
-clear_logo() {
-  measure_terminal
+oma_clear_logo() {
+  if declare -F clear_logo >/dev/null; then
+    clear_logo  # the real upstream helper: logo.txt + its own padding
+    return
+  fi
+  # Standalone (CI/headless): plain OMA-ID header, upstream-like padding.
+  oma_padding
   printf "\033[H\033[2J"
   if [[ -f "$OMA_LOGO" ]]; then
-    gum style --foreground 2 --padding "1 0 0 $PADDING_LEFT" "$(<"$OMA_LOGO")"
+    gum style --foreground 2 --padding "1 0 0 $OMA_PADDING" "$(<"$OMA_LOGO")"
   else
-    # No logo in this environment (CI/headless): plain header, same padding.
-    gum style --foreground 2 --padding "1 0 0 $PADDING_LEFT" "OMA-ID"
+    gum style --foreground 2 --padding "1 0 0 $OMA_PADDING" "OMA-ID"
   fi
 }
 
-step() {
-  clear_logo
+oma_step() {
+  oma_clear_logo
   echo
-  gum style --padding "0 0 0 $PADDING_LEFT" "$1"
+  oma_padding
+  gum style --padding "0 0 0 $OMA_PADDING" "$1"
   echo
 }
 
-say() {
-  gum style --padding "0 0 0 $PADDING_LEFT" "$@"
+oma_say() {
+  oma_padding
+  gum style --padding "0 0 0 $OMA_PADDING" "$@"
 }
 
-abort_choice() {
-  step "oma-id: ${1:-aborted}"
-  say "Nothing was enrolled and no settings were changed."
-  say "You can retry later by restarting the installer."
+oma_abort_choice() {
+  oma_step "oma-id: ${1:-aborted}"
+  oma_say "Nothing was enrolled and no settings were changed."
+  oma_say "You can retry later by restarting the installer."
   exit 1
 }
 
@@ -65,30 +76,30 @@ have_route() {
   ip route show default 2>/dev/null | grep -q default
 }
 
-# ensure_network — live-only path: the work/school flow needs connectivity.
+# oma_ensure_network — live-only path: the work/school flow needs connectivity.
 # Ethernet is configured automatically on the live ISO when a cable is
 # connected; Wi-Fi goes through iwctl (iwd ships on the ISO).
-ensure_network() {
+oma_ensure_network() {
   if have_route; then
     return 0
   fi
-  step "Network connection needed"
-  say "Reaching the OMA-ID server requires a network connection."
-  say "Ethernet is configured automatically when a cable is connected."
-  say "For Wi-Fi, connect with iwctl, then quit it (Ctrl+D) to continue."
+  oma_step "Network connection needed"
+  oma_say "Reaching the OMA-ID server requires a network connection."
+  oma_say "Ethernet is configured automatically when a cable is connected."
+  oma_say "For Wi-Fi, connect with iwctl, then quit it (Ctrl+D) to continue."
   echo
   while true; do
     action=$(printf 'Wi-Fi (iwctl)\nRetry detection\n' |
-      gum choose --header "Set up the network") || abort_choice "network setup cancelled"
+      gum choose --header "Set up the network") || oma_abort_choice "network setup cancelled"
     if [[ "$action" == "Wi-Fi (iwctl)" ]]; then
-      clear_logo
+      oma_clear_logo
       iwctl
     fi
     if have_route; then
-      step "Network connected"
+      oma_step "Network connected"
       return 0
     fi
-    say "No default route yet."
+    oma_say "No default route yet."
     echo
   done
 }
@@ -139,47 +150,48 @@ save_choice() {
   mkdir -p "$CHOICE_DIR"
   jq -n --arg mode "$mode" --arg server "$server" --arg note "$note" \
     '{mode: $mode, server: $server, note: $note}' >"$CHOICE_FILE"
-  say "Recorded $CHOICE_FILE (live environment only; not installed to disk)."
+  oma_say "Recorded $CHOICE_FILE (live environment; consumed by the target provisioning step)."
 }
 
 interactive() {
   local mode url
-  step "Let's set up your machine..."
+  oma_step "Let's set up your machine..."
   mode=$(printf 'Personal use\nSchool / work\n' |
-    gum choose --header "How will this computer be used?") || abort_choice
+    gum choose --header "How will this computer be used?") || oma_abort_choice
 
   if [[ "$mode" == "Personal use" ]]; then
     save_choice "personal" "" "personal install selected; no OMA-ID server contact"
-    say "Personal install — continuing the standard setup."
+    oma_say "Personal install — continuing the standard setup."
     return 0
   fi
 
   # School / work: identify the OMA-ID server (§6.2).
-  ensure_network
-  step "Connect to your organization"
-  say "Enter the OMA-ID server address exactly as given by your organization."
+  oma_ensure_network
+  oma_step "Connect to your organization"
+  oma_say "Enter the OMA-ID server address exactly as given by your organization."
   echo
   while true; do
-    url=$(gum input --placeholder "https://id.example.org" --prompt "OMA-ID server> ") || abort_choice
+    url=$(gum input --placeholder "https://id.example.org" --prompt "OMA-ID server> ") || oma_abort_choice
     if validate "$url"; then
       break
     fi
-    say "Could not validate that server. Retry, or Ctrl+C to abort."
+    oma_say "Could not validate that server. Retry, or Ctrl+C to abort."
     echo
   done
 
-  # Honest P0 boundary: validation is all this slice can do. Never a silent
-  # personal fallback (§6.4) — the user decides explicitly.
+  # P3-a: the installed system self-enrolls on first boot — the agent posts
+  # its key + hardware identity and an administrator accepts it in the
+  # server's review UI. The user decides explicitly (§6.4): enroll the
+  # managed install, or continue as personal. Never silent.
   echo
-  say "This P0 slice has validated the server connection only."
-  say "Enrollment activation arrives with the Phase-2 protocol; nothing is enrolled yet."
-  echo
-  if gum confirm --padding "0 0 0 $PADDING_LEFT" "Continue with a PERSONAL install for now?"; then
-    save_choice "work-school" "$url" "validated; enrollment activation pending P2; personal install continued by explicit user choice"
-    say "Continuing the standard setup (personal)."
+  if gum confirm --padding "0 0 0 $OMA_PADDING" "Set up OMA-ID management on the installed system?"; then
+    save_choice "work-school" "$url" "installed system will self-enroll on first boot; admin acceptance required"
+    oma_say "The installed system will enroll with this server on first boot."
+    oma_say "An administrator must accept the device in the server's enrollment review."
     return 0
   fi
-  abort_choice "work/school selected but enrollment activation is not available on this image."
+  save_choice "work-school-personal" "$url" "server validated; user chose to continue as personal (§6.4 explicit)"
+  oma_say "Continuing as a personal install — no OMA-ID management will be installed."
 }
 
 case "${1:-}" in
