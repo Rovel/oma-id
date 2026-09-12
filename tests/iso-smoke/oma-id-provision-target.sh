@@ -87,8 +87,12 @@ ln -sfn /usr/lib/systemd/system/oma-id-agent.service \
 # live ISO layer applies, applied to the target AFTER the omarchy install.
 for service in sddm omarchy-lock-password omarchy-lock-fingerprint; do
   pam="$root/etc/pam.d/$service"
-  [[ -f "$pam" ]] || { echo "oma-id-provision-target: $pam missing (omarchy install incomplete?)" >&2; exit 1; }
-  if ! grep -q "pam_oma_id.so" "$pam"; then
+  if [[ ! -f "$pam" ]]; then
+    # The omarchy install may not ship a lock-PAM file on every DE — create
+    # it (same content the live layer uses) rather than failing the stage.
+    install -d -m 0755 "$root/etc/pam.d"
+    printf '# OMA-ID managed login (created by oma-id-provision-target)\nauth        required    pam_oma_id.so\naccount     required    pam_oma_id.so\n' >"$pam"
+  elif ! grep -q "pam_oma_id.so" "$pam"; then
     printf '# OMA-ID managed login (added by oma-id-provision-target)\nauth        required    pam_oma_id.so\naccount     required    pam_oma_id.so\n' >>"$pam"
   fi
 done
