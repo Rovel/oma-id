@@ -21,6 +21,11 @@
 set -euo pipefail
 
 root="${1:?usage: oma-id-provision-target.sh <target-root> [server-url] [device-id]}"
+
+# Self-reporting: everything this script does lands BOTH in the live install
+# log and in a log INSIDE the target root, so the INSTALLED system can show
+# exactly what happened after the live environment is gone.
+exec > >(tee -a /var/log/omarchy-install.log "$root/var/log/oma-id-provision-install.log" >/dev/null) 2>&1 || true
 server_url="${2:-}"
 device_id="${3:-workstation-1}"
 choice_file=/run/oma-id/standin-choice.json
