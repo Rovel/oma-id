@@ -31,6 +31,12 @@ device_id="${3:-workstation-1}"
 choice_file=/run/oma-id/standin-choice.json
 
 # --- gate (§6.4 / ADR-006): only an explicit work-school choice provisions ---
+# The /run copy is tmpfs and can vanish (mid-install reboot/cleanup); the
+# target-root backup made by the install script survives on disk.
+if [[ ! -f "$choice_file" && -f "$root/etc/oma-id/standin-choice.json" ]]; then
+  choice_file="$root/etc/oma-id/standin-choice.json"
+  echo "oma-id-provision-target: using the target-root choice backup ($choice_file)" >&2
+fi
 if [[ -f "$choice_file" ]]; then
   mode=$(jq -r '.mode // empty' "$choice_file")
 else
