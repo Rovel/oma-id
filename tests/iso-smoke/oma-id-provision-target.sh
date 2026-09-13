@@ -38,6 +38,15 @@ else
 fi
 if [[ "$mode" != "work-school" ]]; then
   echo "oma-id-provision-target: choice mode '${mode:-none}' — no OMA-ID management staged (personal install)."
+  # Record WHY (this output lands in the installed system's log): was the
+  # file gone (tmpfs/reboot), or there but unreadable (jq)?
+  if [[ -f "$choice_file" ]]; then
+    echo "oma-id-provision-target: choice file EXISTS at $choice_file; content:"
+    head -c 300 "$choice_file" | sed 's/^/  /'
+  else
+    echo "oma-id-provision-target: choice file MISSING at $choice_file"
+    ls -la /run/oma-id 2>&1 | sed 's/^/  /' || true
+  fi
   exit 0
 fi
 
