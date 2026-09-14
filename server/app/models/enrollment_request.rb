@@ -26,6 +26,7 @@ class EnrollmentRequest < ApplicationRecord
             format: { with: /\A[0-9a-f]{64}\z/ }
   validates :state, presence: true, inclusion: { in: STATES }
   validates :nonce, presence: true
+  validates :disk_encryption, inclusion: { in: %w[planned encrypted none] }, allow_nil: true
 
   scope :pending, -> { where(state: "pending") }
   scope :recent_first, -> { order(created_at: :desc) }

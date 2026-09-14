@@ -34,7 +34,8 @@ module Api
           model: body["model"].to_s[0, 200].presence,
           serial_number: body["serial_number"].to_s[0, 200].presence,
           machine_id: body["machine_id"].to_s[0, 64].presence,
-          requested_device_id: body["requested_device_id"].to_s[0, 128].presence
+          requested_device_id: body["requested_device_id"].to_s[0, 128].presence,
+          disk_encryption: body["disk_encryption"].to_s[0, 16].presence
         }
         key = body["public_key_hex"].to_s.strip.downcase
         unless key.match?(/\A[0-9a-f]{64}\z/)
