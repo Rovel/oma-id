@@ -51,6 +51,30 @@ fn main() -> std::process::ExitCode {
                 std::process::ExitCode::FAILURE
             }
         },
+        // One-shot device key generation for the INSTALLER (docs/p0/
+        // installer-enrollment.md): writes the 32-byte seed (0600) at --out
+        // and prints the public key hex on stdout for the enrollment POST.
+        // load_or_create means the seed format is exactly what the installed
+        // agent loads on first boot.
+        Some("genkey") => {
+            let out = match std::env::args().skip_while(|a| a != "--out").nth(1) {
+                Some(v) => v,
+                None => {
+                    eprintln!("oma-id-agent: genkey requires --out <path>");
+                    return std::process::ExitCode::FAILURE;
+                }
+            };
+            match generate_device_key(Path::new(&out)) {
+                Ok(pubkey) => {
+                    println!("{pubkey}");
+                    std::process::ExitCode::SUCCESS
+                }
+                Err(error) => {
+                    eprintln!("oma-id-agent: genkey failed: {error}");
+                    std::process::ExitCode::FAILURE
+                }
+            }
+        }
         Some("--help") | Some("-h") | None => {
             print_help();
             std::process::ExitCode::SUCCESS
@@ -88,6 +112,12 @@ fn now_secs() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0)
+}
+
+/// Generate (or load) the device key at `out` (32-byte seed, 0600) and
+/// return its public key hex for the installer's enrollment POST.
+fn generate_device_key(out: &Path) -> Result<String, AgentError> {
+    DeviceIdentity::load_or_create(out).map(|id| id.public_key_hex)
 }
 
 /// Reserve-then-activate bootstrap, then fall through to the daemon run
