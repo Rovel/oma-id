@@ -145,6 +145,51 @@ validate() {
   echo "Compare the requested origin with the canonical issuer before trusting this server."
 }
 
+# --- hardware identity (DMI; live env has real values, VMs fall back) ---
+dmi_field() { cat "/sys/class/dmi/id/$1" 2>/dev/null | tr -d '\n'; }
+dmi_name() {
+  local v m
+  v=$(dmi_field sys_vendor); m=$(dmi_field product_name)
+  label="$v${v:+ }$m"
+  [[ -z "$label" ]] && label="Device $(cat /etc/machine-id 2>/dev/null | head -c 8)"
+  printf '%s' "$label" | tr -s ' '
+}
+
+# Reservation (docs/p0/installer-enrollment.md, §7.2 step 5): generate the
+# device key in the live RAM (agent genkey — seed written 0600) and POST the
+# public key + hardware identity so the server shows the machine BEFORE the
+# disk is formatted. The seed is staged into the LUKS target by
+# provision-target; first boot proves it and activates.
+keygen_and_enroll() {
+  local url="$1" machine="$2"
+  oma_step "Enrolling this machine"
+  local keygen_out
+  keygen_out=$(/usr/bin/oma-id-agent genkey --out "$CHOICE_DIR/device.key") || {
+    oma_abort_choice "device key generation failed (oma-id-agent genkey)"
+  }
+  oma_say "Device key generated; registering the reservation…"
+  local resp
+  resp=$(jq -n --arg did "$machine" --arg key "$keygen_out" \
+    --arg name "$(dmi_name)" --arg man "$(dmi_field sys_vendor)" \
+    --arg model "$(dmi_field product_name)" --arg serial "$(dmi_field product_serial)" \
+    --arg mid "$(cat /etc/machine-id 2>/dev/null | head -c 32)" \
+    '{requested_device_id:$did, public_key_hex:$key, device_name:$name,
+      manufacturer:$man, model:$model, serial_number:$serial, machine_id:$mid,
+      disk_encryption:"planned"}' | \
+    curl -sS --max-time 20 -H 'Content-Type: application/json' -X POST --data-binary @- "$url/api/v1/enrollment-requests") || {
+    oma_abort_choice "could not reach the server to register the reservation"
+  }
+  local rid
+  rid=$(printf '%s' "$resp" | jq -r '.id // empty')
+  if [[ -z "$rid" || "$rid" == "null" ]]; then
+    oma_say "Server refused the reservation: $(printf '%s' "$resp" | head -c 300)"
+    oma_abort_choice "enrollment request rejected"
+  fi
+  printf '{"request_id":%s}' "$rid" >"$CHOICE_DIR/enrollment.json"
+  oma_say "Reservation #$rid registered. The administrator accepts it in the review UI;"
+  oma_say "this install continues meanwhile and first boot activates it."
+}
+
 save_choice() {
   local mode="$1" server="$2" note="$3" device="${4:-}"
   mkdir -p "$CHOICE_DIR"
@@ -201,7 +246,8 @@ interactive() {
   # managed install, or continue as personal. Never silent.
   echo
   if gum confirm --padding "0 0 0 $OMA_PADDING" "Set up OMA-ID management on the installed system?"; then
-    save_choice "work-school" "$url" "installed system will self-enroll on first boot; admin acceptance required" "$machine"
+    keygen_and_enroll "$url" "$machine"
+    save_choice "work-school" "$url" "reservation registered at install; first boot activates it" "$machine"
     oma_say "The installed system (hostname: $machine) will enroll on first boot."
     oma_say "An administrator must accept the device in the server's enrollment review."
     return 0
