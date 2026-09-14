@@ -186,8 +186,30 @@ keygen_and_enroll() {
     oma_abort_choice "enrollment request rejected"
   fi
   printf '{"request_id":%s}' "$rid" >"$CHOICE_DIR/enrollment.json"
-  oma_say "Reservation #$rid registered. The administrator accepts it in the review UI;"
-  oma_say "this install continues meanwhile and first boot activates it."
+
+  # §7.2 step 4 possession proof: the installer signs the status poll with
+  # the freshly generated key. Without this stamp the admin CANNOT accept
+  # (the gate refuses) — and nothing else can prove it before acceptance.
+  # Required: retry a few times, then abort loudly.
+  oma_say "Proving key possession to the server…"
+  local attempts=0 ok=""
+  while [[ $attempts -lt 5 && -z "$ok" ]]; do
+    if /usr/bin/oma-id-agent enr-status --server "$url" --key "$CHOICE_DIR/device.key" \
+        --request-id "$rid" >/dev/null 2>&1; then
+      ok=1
+    else
+      attempts=$((attempts + 1))
+      oma_say "possession check #$attempts failed — retrying…"
+      sleep 3
+    fi
+  done
+  if [[ -z "$ok" ]]; then
+    oma_abort_choice "could not prove key possession — the administrator would never be able to accept. Re-run STEP 0."
+  fi
+
+  oma_say "Reservation #$rid registered and possession VERIFIED."
+  oma_say "The administrator can accept it in the review UI at any time;"
+  oma_say "this install continues and first boot activates it."
 }
 
 save_choice() {

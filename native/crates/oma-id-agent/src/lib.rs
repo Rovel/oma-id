@@ -440,6 +440,39 @@ pub fn post_first_boot_ack(
     }
 }
 
+/// Device-signed status poll (docs/p0/installer-enrollment.md, §7.2 step 4):
+/// proves the INSTALLER holds the future machine key by signing
+/// "enrollment-status|<request_id>|<now>" against the reservation endpoint.
+/// The server stamps key_possession_verified_at on the request, which is
+/// what unblocks administrative acceptance. Returns the raw response body.
+pub fn enrollment_status_poll(
+    server_url: &str,
+    request_id: u64,
+    identity: &DeviceIdentity,
+) -> Result<String, AgentError> {
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let message = format!("enrollment-status|{request_id}|{timestamp}");
+    let signature = identity.signing_key.sign(message.as_bytes());
+    let url = format!(
+        "{}/api/v1/enrollment-requests/{request_id}?timestamp={timestamp}&signature_hex={}",
+        server_url.trim_end_matches('/'),
+        hex::encode(signature.to_bytes()),
+    );
+    match ureq::get(&url).call() {
+        Ok(response) => Ok(response
+            .into_string()
+            .map_err(|e| AgentError::Message(format!("status read: {e}")))?),
+        Err(ureq::Error::Status(status, response)) => Err(AgentError::Message(format!(
+            "enrollment status {status}: {}",
+            response.into_string().unwrap_or_default()
+        ))),
+        Err(e) => Err(AgentError::Message(format!("enrollment status: {e}"))),
+    }
+}
+
 /// Digest helper exposed for tests: key_id = SHA-256 of the raw public key.
 pub fn key_id_of_public_key(public_key: &ed25519_dalek::VerifyingKey) -> String {
     hex::encode(sha2::Sha256::digest(public_key.as_bytes()))

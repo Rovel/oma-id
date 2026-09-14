@@ -56,6 +56,16 @@ fn main() -> std::process::ExitCode {
         // and prints the public key hex on stdout for the enrollment POST.
         // load_or_create means the seed format is exactly what the installed
         // agent loads on first boot.
+        // Installer possession proof (§7.2 step 4): sign the reservation's
+        // status poll with the freshly generated device key so the admin can
+        // accept immediately — no first-boot deadlock.
+        Some("enr-status") => match enr_status_runner() {
+            Ok(()) => std::process::ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("oma-id-agent: {error}");
+                std::process::ExitCode::FAILURE
+            }
+        },
         Some("genkey") => {
             let out = match std::env::args().skip_while(|a| a != "--out").nth(1) {
                 Some(v) => v,
@@ -118,6 +128,43 @@ fn now_secs() -> u64 {
 /// return its public key hex for the installer's enrollment POST.
 fn generate_device_key(out: &Path) -> Result<String, AgentError> {
     DeviceIdentity::load_or_create(out).map(|id| id.public_key_hex)
+}
+
+/// enr-status runner: --server <url> --key <device.key> --request-id <id>
+fn enr_status_runner() -> Result<(), AgentError> {
+    let mut server = "";
+    let mut key = "";
+    let mut id: u64 = 0;
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let mut i = 0;
+    while i < args.len() {
+        match args[i].as_str() {
+            "--server" => {
+                server = args.get(i + 1).map(String::as_str).unwrap_or("");
+                i += 1;
+            }
+            "--key" => {
+                key = args.get(i + 1).map(String::as_str).unwrap_or("");
+                i += 1;
+            }
+            "--request-id" => {
+                id = args.get(i + 1).and_then(|v| v.parse().ok()).unwrap_or(0);
+                i += 1;
+            }
+            _ => {}
+        }
+        i += 1;
+    }
+    if server.is_empty() || key.is_empty() || id == 0 {
+        return Err(AgentError::Message(
+            "enr-status requires --server <url> --key <path> --request-id <id>".into(),
+        ));
+    }
+    let identity = DeviceIdentity::load_or_create(Path::new(key))
+        .map_err(|e| AgentError::Message(format!("device identity ({key}): {e}")))?;
+    let body = oma_id_agent::enrollment_status_poll(server, id, &identity)?;
+    println!("{body}");
+    Ok(())
 }
 
 /// Reserve-then-activate bootstrap, then fall through to the daemon run
