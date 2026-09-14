@@ -151,6 +151,41 @@ pub fn ensure_local_account(mapping: &PosixMapping) -> Result<(), ProvisionError
     Ok(())
 }
 
+/// Set a local account's password via `chpasswd` (the shadow suite tool),
+/// piping "user:password" on stdin as root — no shell, no echo of the secret
+/// into argv (§10 sets the password locally; the one-time bootstrap is a
+/// local write, never synced). Returns an error only if chpasswd exits
+/// non-zero.
+pub fn set_local_password(username: &str, password: &str) -> Result<(), ProvisionError> {
+    use std::io::Write;
+    use std::process::Stdio;
+
+    let mut child = Command::new("chpasswd")
+        .stdin(Stdio::piped())
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(ProvisionError::Io)?;
+
+    let stdin = child
+        .stdin
+        .as_mut()
+        .ok_or_else(|| ProvisionError::Message("chpasswd stdin unavailable".into()))?;
+    stdin
+        .write_all(format!("{username}:{password}\n").as_bytes())
+        .map_err(ProvisionError::Io)?;
+
+    let output = child.wait_with_output().map_err(ProvisionError::Io)?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(ProvisionError::Message(format!(
+            "chpasswd failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        )))
+    }
+}
+
 /// Rate limiter for credential attempts (§5.1): per local username, a fixed
 /// number of failures within a window triggers a cooldown. In-process state
 /// (single daemon); persisted ban lists are later work.

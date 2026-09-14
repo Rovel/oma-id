@@ -87,6 +87,7 @@ fn apply_check_in_records_leases_and_persists_the_key_set() {
             shell: "/bin/zsh".into(),
             full_name: "Device Owner".into(),
         }),
+        bootstrap: None,
     };
 
     let mut store = Store::load(&dir.path().join("leases.json")).expect("empty store");

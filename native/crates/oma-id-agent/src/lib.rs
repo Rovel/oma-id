@@ -175,6 +175,22 @@ pub struct CheckInResponse {
     /// account from it.
     #[serde(default)]
     pub posix: Option<crate::provisioning::PosixMapping>,
+    /// The one-time first-login bootstrap credential (docs/p0/installer-
+    /// enrollment.md): present only on the ACTIVATING check-in of a pending
+    /// reservation. Single-use — the agent applies it locally and discards
+    /// it; the server has already nulled it.
+    #[serde(default)]
+    pub bootstrap: Option<Bootstrap>,
+}
+
+/// One-time first-login bootstrap issued at reserve activation (§6.3/§7.2
+/// step 5). `rotate` tells the bootstrapper the user must set a real
+/// password at first login.
+#[derive(Clone, Debug, Deserialize)]
+pub struct Bootstrap {
+    pub credential: String,
+    #[serde(default)]
+    pub rotate: bool,
 }
 
 #[derive(Clone, Debug, Deserialize)]
@@ -334,6 +350,94 @@ pub(crate) fn persist_atomically(path: &Path, bytes: &[u8]) -> Result<(), AgentE
     std::fs::write(&tmp, bytes)?;
     std::fs::rename(&tmp, path)?;
     Ok(())
+}
+
+/// The result of a successful reserve activation: the POSIX mapping to
+/// provision plus the one-time bootstrap credential (if delivered).
+#[derive(Clone, Debug)]
+pub struct Bootstrapped {
+    pub posix: crate::provisioning::PosixMapping,
+    pub bootstrap_credential: Option<String>,
+}
+
+/// Reserve-then-activate bootstrap (docs/p0/installer-enrollment.md, §7.2
+/// step 5): the installed machine retries its signed check-in until the
+/// reservation is accepted. A 401 means the admin has not accepted yet —
+/// wait and retry (bounded by the caller's loop). The first 200 is the
+/// activation: the server may be pending-less, so any Ok response is taken.
+pub fn bootstrap_checkin_until_accepted(
+    server_url: &str,
+    device_id: &str,
+    identity: &DeviceIdentity,
+    retry_interval: std::time::Duration,
+) -> Result<Bootstrapped, AgentError> {
+    loop {
+        match check_in(server_url, device_id, identity) {
+            Ok(response) => {
+                let posix = response.posix.clone().ok_or_else(|| {
+                    AgentError::Message("activation check-in returned no POSIX mapping".into())
+                })?;
+                let bootstrap_credential = response.bootstrap.as_ref().map(|b| b.credential.clone());
+                return Ok(Bootstrapped {
+                    posix,
+                    bootstrap_credential,
+                });
+            }
+            Err(CheckInError::Rejected { status: 401, .. }) => {
+                eprintln!("oma-id-agent: reservation not accepted yet — retrying in {}s", retry_interval.as_secs());
+            }
+            Err(other) => {
+                eprintln!("oma-id-agent: check-in failed (will retry in {}s): {other}", retry_interval.as_secs());
+            }
+        }
+        std::thread::sleep(retry_interval);
+    }
+}
+
+/// Apply bootstrap: provision the local account (§8.4) and set the local
+/// password to the one-time credential (§10 — a local write, never synced).
+pub fn apply_bootstrap(bootstrapped: &Bootstrapped) -> Result<(), AgentError> {
+    crate::provisioning::ensure_local_account(&bootstrapped.posix)
+        .map_err(|e| AgentError::Message(format!("provision account: {e}")))?;
+    if let Some(credential) = &bootstrapped.bootstrap_credential {
+        crate::provisioning::set_local_password(&bootstrapped.posix.username, credential)
+            .map_err(|e| AgentError::Message(format!("set bootstrap password: {e}")))?;
+        eprintln!("oma-id-agent: local password set (bootstrap); user must rotate at first login");
+    }
+    Ok(())
+}
+
+/// Post the first-boot baseline evidence ack (§7.2 step 8) — device-signed,
+/// so the server records that provisioning completed.
+pub fn post_first_boot_ack(
+    server_url: &str,
+    device_id: &str,
+    identity: &DeviceIdentity,
+) -> Result<(), AgentError> {
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0);
+    let message = format!("{device_id}|{timestamp}");
+    let signature = identity.signing_key.sign(message.as_bytes());
+    let body = serde_json::json!({
+        "device_id": device_id,
+        "timestamp": timestamp,
+        "signature_hex": hex::encode(signature.to_bytes()),
+        "provisioning": "account+password",
+    });
+    let url = format!(
+        "{}/api/v1/device/first-boot-acks",
+        server_url.trim_end_matches('/')
+    );
+    match ureq::post(&url)
+        .set("Content-Type", "application/json")
+        .send_json(body)
+    {
+        Ok(_) => Ok(()),
+        Err(ureq::Error::Status(401, _)) => Ok(()), // server, not fatal; we tried
+        Err(e) => Err(AgentError::Message(format!("first-boot ack: {e}"))),
+    }
 }
 
 /// Digest helper exposed for tests: key_id = SHA-256 of the raw public key.

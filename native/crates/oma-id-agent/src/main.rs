@@ -20,7 +20,8 @@
 //! later slices (plan §21 P4/P6).
 
 use oma_id_agent::{
-    active_lease_in, apply_check_in, check_in, AgentConfig, AgentError, CheckInError, DeviceIdentity,
+    active_lease_in, apply_bootstrap, apply_check_in, bootstrap_checkin_until_accepted, check_in,
+    post_first_boot_ack, AgentConfig, AgentError, CheckInError, DeviceIdentity,
 };
 use std::path::Path;
 use oma_id_agent_daemon::{bind, handle_connection, ServiceConfig};
@@ -32,6 +33,18 @@ fn main() -> std::process::ExitCode {
     let args: Vec<String> = std::env::args().skip(1).collect();
     match args.first().map(String::as_str) {
         Some("run") => match run(args.get(1)) {
+            Ok(()) => std::process::ExitCode::SUCCESS,
+            Err(error) => {
+                eprintln!("oma-id-agent: {error}");
+                std::process::ExitCode::FAILURE
+            }
+        },
+        // Reserve-then-activate (§7.2 step 5): retry the signed check-in
+        // until the admin accepts the reservation, provision the local
+        // account + set the one-time bootstrap password, ack first boot, then
+        // continue into the normal daemon loop. Bounded retry/backoff; no
+        // first-boot dead-end at a pending acceptance.
+        Some("bootstrap") => match bootstrap_and_run(args.get(1)) {
             Ok(()) => std::process::ExitCode::SUCCESS,
             Err(error) => {
                 eprintln!("oma-id-agent: {error}");
@@ -75,6 +88,31 @@ fn now_secs() -> u64 {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0)
+}
+
+/// Reserve-then-activate bootstrap, then fall through to the daemon run
+/// (which reloads the config and does an ordinary check-in/provisioning).
+fn bootstrap_and_run(args: Option<&String>) -> Result<(), AgentError> {
+    let config_path = std::env::args().skip_while(|a| a != "--config").nth(1)
+        .ok_or_else(|| AgentError::Message("bootstrap requires --config <path>".into()))?;
+    let config = AgentConfig::load(Path::new(&config_path))?;
+    let identity = DeviceIdentity::load_or_create(&config.device_key_path())
+        .map_err(|e| AgentError::Message(format!("device identity: {e}")))?;
+    eprintln!(
+        "oma-id-agent: bootstrap — waiting for the reservation to be accepted (device {})",
+        config.device_id
+    );
+    let bootstrapped = bootstrap_checkin_until_accepted(
+        &config.server_url, &config.device_id, &identity, Duration::from_secs(30),
+    )?;
+    eprintln!(
+        "oma-id-agent: reservation activated (person {}) — provisioning local account",
+        bootstrapped.posix.username
+    );
+    apply_bootstrap(&bootstrapped)?;
+    post_first_boot_ack(&config.server_url, &config.device_id, &identity)?;
+    eprintln!("oma-id-agent: first-boot bootstrap complete — starting daemon");
+    run(args)
 }
 
 fn run(args: Option<&String>) -> Result<(), AgentError> {
