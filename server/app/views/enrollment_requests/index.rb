@@ -149,6 +149,11 @@ module Views
               if request.pending?
                 accept_form(request)
                 reject_form(request)
+                # Stale reservations (failed/reflashed installs never activate
+                # — their key died with the live /run) accumulate; delete is
+                # the cleanup. Deleting a pending request removes the row; the
+                # same key may post a fresh one (§7.3).
+                delete_form(request, label: "Delete")
               elsif request.state != "accepted"
                 clear_form(request)
               else
@@ -216,11 +221,15 @@ module Views
         end
       end
 
-      def clear_form(request)
+      def clear_form(request, label: "Clear (allows a new request)")
+        delete_form(request, label:)
+      end
+
+      def delete_form(request, label:)
         form(action: enrollment_request_path(request), method: "post", class: "oma-inline-form") do
           input(type: "hidden", name: "_method", value: "delete")
           input(type: "hidden", name: "authenticity_token", value: form_authenticity_token)
-          render RubyUI::Button.new(variant: :outline, type: "submit") { "Clear (allows a new request)" }
+          render RubyUI::Button.new(variant: :outline, type: "submit") { label }
         end
       end
     end

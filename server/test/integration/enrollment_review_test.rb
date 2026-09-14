@@ -101,6 +101,17 @@ class EnrollmentReviewTest < ActionDispatch::IntegrationTest
     assert_not_equal request_record.id, fresh.id
   end
 
+  test "a pending request can be deleted (stale reservations cleanup)" do
+    request_record = EnrollmentRequest.record!(public_key_hex: @key_hex, device_name: "stale")
+    delete enrollment_request_path(request_record)
+    assert_redirected_to enrollment_requests_path
+    assert_not EnrollmentRequest.exists?(request_record.id)
+    assert AuditEvent.where(action: "enrollment.clear", target: "enrollment_request:#{request_record.id}").exists?
+    # the same key can start over with a fresh request (§7.3)
+    fresh = EnrollmentRequest.record!(public_key_hex: @key_hex, device_name: "fresh")
+    assert fresh.pending?
+  end
+
   test "employee role cannot see the review surface" do
     sign_in_as(@employee, password: "correct-horse")
     get enrollment_requests_path
