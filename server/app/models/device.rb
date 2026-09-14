@@ -23,8 +23,19 @@ class Device < ApplicationRecord
   validates :state, presence: true, inclusion: { in: STATES }
 
   scope :active, -> { where(state: "active") }
+  scope :pending, -> { where(state: "pending") }
 
   def active?
     state == "active"
+  end
+
+  def pending?
+    state == "pending"
+  end
+
+  # Reserve-then-activate (§6.3/§7.2 step 5): the first signed check-in from
+  # the installed machine flips the reservation to an active device.
+  def activate!
+    update!(state: "active")
   end
 end

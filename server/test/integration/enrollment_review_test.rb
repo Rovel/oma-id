@@ -59,7 +59,7 @@ class EnrollmentReviewTest < ActionDispatch::IntegrationTest
     assert_equal "pending", request_record.reload.state
   end
 
-  test "admin accepts: device becomes active with a POSIX mapping and an audit event" do
+  test "admin accepts: device becomes a PENDING reservation with a POSIX mapping and an audit event" do
     request_record = EnrollmentRequest.record!(public_key_hex: @key_hex, device_name: "Burnt PC",
                                                requested_device_id: "workstation-1")
     request_record.mark_key_possession_verified!
@@ -69,7 +69,8 @@ class EnrollmentReviewTest < ActionDispatch::IntegrationTest
     assert_redirected_to enrollment_requests_path
 
     device = Device.find_by(device_id: "workstation-1")
-    assert device&.active?
+    assert device&.pending?, "acceptance reserves the device; it activates on first check-in (§6.3)"
+    assert device&.bootstrap_credential.present?, "a one-time first-login bootstrap is issued at acceptance"
     assert_equal @employee.id, device.person_id
     assert_equal "accepted", request_record.reload.state
     assert PosixIdentityMapping.find_by(person: @employee), "§8.4 mapping allocated"

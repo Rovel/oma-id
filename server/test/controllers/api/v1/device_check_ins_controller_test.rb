@@ -23,7 +23,8 @@ module Api
           device_id: "test-device-1",
           person: @person,
           public_key_hex: @signing.verify_key.to_bytes.unpack1("H*"),
-          state: "active"
+          state: "pending",  # reserve-then-activate (§6.3/§7.2 step 5)
+          bootstrap_credential: SecureRandom.base58(20)
         )
       end
 
@@ -35,7 +36,29 @@ module Api
              headers: { "CONTENT_TYPE" => "application/json" }
       end
 
+      test "first check-in activates a pending reservation and delivers the bootstrap" do
+        freeze_time
+        credential = @device.bootstrap_credential
+        signed_check_in
+        assert_response :ok
+        body = JSON.parse(response.body)
+        # single-use bootstrap delivered + nulled
+        assert @device.reload.active?, "first check-in activates the reservation"
+        assert_equal credential, body.dig("bootstrap", "credential")
+        assert_equal true, body.dig("bootstrap", "rotate")
+        assert @device.reload.bootstrap_credential.nil?, "bootstrap nulled after delivery (single-use)"
+      end
+
+      test "a second check-in after activation returns no bootstrap" do
+        @device.update!(state: "active", bootstrap_credential: nil, bootstrap_delivered_at: Time.current)
+        signed_check_in
+        assert_response :ok
+        assert_nil JSON.parse(response.body)["bootstrap"]
+        assert_equal "device.check_in", AuditEvent.last.action
+      end
+
       test "check-in with a valid device signature mints a bound signed lease" do
+        @device.update!(state: "active", bootstrap_credential: nil, bootstrap_delivered_at: Time.current)
         freeze_time
         with_issuer_seed do
           signed_check_in

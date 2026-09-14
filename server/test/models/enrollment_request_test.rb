@@ -51,7 +51,8 @@ class EnrollmentRequestTest < ActiveSupport::TestCase
 
     assert_equal "accepted", request_record.reload.state
     assert_equal device.id, request_record.device_id
-    assert device.active?
+    assert device.pending?, "acceptance reserves; first check-in activates"
+    assert device.bootstrap_credential.present?, "one-time bootstrap issued at acceptance"
     assert_equal @person.id, device.person_id
     mapping = PosixIdentityMapping.find_by(person: @person)
     assert mapping, "POSIX mapping allocated on acceptance (§8.4)"

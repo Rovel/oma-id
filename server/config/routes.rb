@@ -14,6 +14,8 @@ Rails.application.routes.draw do
     namespace :v1 do
       post "device/leases", to: "device_leases#create"
       post "device/check-ins", to: "device_check_ins#create"
+      # First-boot baseline evidence ack (§7.2 step 8, docs/p0/installer-enrollment.md).
+      post "device/first-boot-acks", to: "device_first_boot_acks#create"
       # P3-a enrollment transaction, device side (see the controller).
       # Hyphenated paths, matching the existing API shape (device/check-ins).
       post "enrollment-requests", to: "enrollment_requests#create"

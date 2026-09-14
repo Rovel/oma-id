@@ -30,13 +30,18 @@ module OmaId
         if device.person_id != @person.id || device.public_key_hex != @public_key_hex
           raise EnrollError, "device #{@device_id} already exists with a different binding"
         end
-        return device if device.active?
+        return device if device.active? || device.pending?
 
-        device.update!(state: "active")
+        device.update!(state: "pending")
         return device
       end
 
-      device.update!(person: @person, public_key_hex: @public_key_hex, state: "active")
+      # Reserved, not yet active: the first signed check-in activates it and
+      # delivers the one-time first-login bootstrap (§6.3/§7.2 step 5).
+      device.update!(
+        person: @person, public_key_hex: @public_key_hex, state: "pending",
+        bootstrap_credential: SecureRandom.base58(20)
+      )
 
       # §8.4: durable POSIX mapping, allocated by the server at provisioning.
       mapping = PosixIdentityMapping.find_or_create_by!(person: @person) do |m|

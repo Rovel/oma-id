@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.1].define(version: 2026_09_09_210000) do
+ActiveRecord::Schema[8.1].define(version: 2026_09_13_000000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -27,8 +27,11 @@ ActiveRecord::Schema[8.1].define(version: 2026_09_09_210000) do
   end
 
   create_table "devices", force: :cascade do |t|
+    t.string "bootstrap_credential"
+    t.datetime "bootstrap_delivered_at"
     t.datetime "created_at", null: false
     t.string "device_id", null: false
+    t.datetime "first_boot_acknowledged_at"
     t.datetime "last_check_in_at"
     t.bigint "person_id", null: false
     t.string "public_key_hex", null: false

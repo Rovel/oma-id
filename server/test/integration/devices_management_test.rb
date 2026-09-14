@@ -33,7 +33,8 @@ class DevicesManagementTest < ActionDispatch::IntegrationTest
                                  public_key_hex: "a" * 64 }
     assert_redirected_to devices_path
     device = Device.find_by(device_id: "tech-reg-1")
-    assert device&.active?
+    assert device&.pending?, "technician registration reserves; first check-in activates"
+    assert device.bootstrap_credential.present?
     assert_equal @admin.id, device.person_id
     assert AuditEvent.where(action: "device.register", target: "tech-reg-1").exists?
   end

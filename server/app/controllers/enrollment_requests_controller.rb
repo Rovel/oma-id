@@ -47,7 +47,7 @@ class EnrollmentRequestsController < ApplicationController
     begin
       device = @enrollment_request.accept!(person:, device_id:, actor: actor_name)
       redirect_to enrollment_requests_path,
-                  notice: "Device #{device.device_id} enrolled for #{person.primary_email} (POSIX mapping allocated)."
+                  notice: "Device #{device.device_id} reserved for #{person.primary_email}; activates on its first check-in."
     rescue EnrollmentRequest::NotReady, OmaId::EnrollDevice::EnrollError => e
       redirect_to enrollment_requests_path, alert: "Enrollment refused: #{e.message}"
     end

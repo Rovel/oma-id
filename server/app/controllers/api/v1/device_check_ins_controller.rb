@@ -17,19 +17,33 @@ module Api
       REPLAY_WINDOW_SECONDS = 300
 
       # POST /api/v1/device/check-ins
+      #
+      # Reserve-then-activate (§6.3/§7.2 step 5): a PENDING device is the
+      # reservation bound to its person and key at acceptance; the first
+      # signed check-in proves the installed machine holds the key and flips
+      # it to active, delivering the one-time first-login bootstrap
+      # credential (single-use — nulled on delivery).
       def create
         device = Device.find_by(device_id: body["device_id"].to_s)
-        # Unknown and revoked devices are indistinguishable (no oracle).
-        return render json: { error: "unauthorized" }, status: :unauthorized unless device&.active?
+        # Unknown, revoked, and otherwise-not-usable devices are
+        # indistinguishable (no oracle). Only pending/active can be tried.
+        return render(json: { error: "unauthorized" }, status: :unauthorized) unless device && (device.pending? || device.active?)
+        return render(json: { error: "unauthorized" }, status: :unauthorized) unless verify_device_signature(device, body)
 
-        unless verify_device_signature(device, body)
-          return render json: { error: "unauthorized" }, status: :unauthorized
-        end
-
+        activation = device.pending?
+        device.activate! if activation
         device.update!(last_check_in_at: Time.current)
-        AuditEvent.record!(actor: device.device_id, action: "device.check_in", result: "success")
+        AuditEvent.record!(actor: device.device_id,
+                           action: activation ? "device.activate" : "device.check_in",
+                           result: "success")
 
-        render json: check_in_response(device)
+        response = check_in_response(device)
+        if activation
+          credential = device.bootstrap_credential
+          device.update!(bootstrap_delivered_at: Time.current, bootstrap_credential: nil)
+          response[:bootstrap] = { credential:, rotate: true } if credential
+        end
+        render json: response
       end
 
       private
