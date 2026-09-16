@@ -89,9 +89,14 @@ install -D -m 0644 "$unit_src" "$root/usr/lib/systemd/system/oma-id-agent.servic
 # LUKS-protected target. Loaded by the agent on first boot; the server
 # already holds the matching public key from the reservation. Missing at
 # staging = the reservation flow never ran = fail the stage loudly.
-key_src=/run/oma-id/device.key
+key_src=/run/oma-id-install/device.key
+# quattro: the orchestrator phase stages the seed directly into the target
+# before calling us — accept that pre-staged copy too.
+if [[ ! -s "$key_src" && -s "$root/var/lib/oma-id/device.key" ]]; then
+  key_src="$root/var/lib/oma-id/device.key"
+fi
 if [[ ! -s "$key_src" ]]; then
-  echo "oma-id-provision-target: $key_src MISSING — STEP 0 did not generate the device key; refusing to stage (unmanaged)" >&2
+  echo "oma-id-provision-target: no device key in /run/oma-id-install or $root/var/lib/oma-id — refusing to stage (unmanaged)" >&2
   exit 1
 fi
 install -D -m 0600 "$key_src" "$root/var/lib/oma-id/device.key"

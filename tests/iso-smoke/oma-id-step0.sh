@@ -10,7 +10,7 @@
 #   /run/oma-id/enrollment.json      (request id)
 # Personal installs write mode=personal and return — stock quattro otherwise.
 
-OMA_CHOICE_DIR=/run/oma-id
+OMA_CHOICE_DIR=/run/oma-id-install
 OMA_AGENT=/usr/bin/oma-id-agent
 
 oma_dmi_field() { cat "/sys/class/dmi/id/$1" 2>/dev/null | tr -d '\n'; }
