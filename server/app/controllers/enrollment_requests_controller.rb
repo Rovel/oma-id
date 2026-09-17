@@ -45,7 +45,10 @@ class EnrollmentRequestsController < ApplicationController
     end
 
     begin
-      device = @enrollment_request.accept!(person:, device_id:, actor: actor_name)
+      device = @enrollment_request.accept!(
+        person:, device_id:, actor: actor_name,
+        initial_password: params[:initial_password].to_s
+      )
       redirect_to enrollment_requests_path,
                   notice: "Device #{device.device_id} reserved for #{person.primary_email}; activates on its first check-in."
     rescue EnrollmentRequest::NotReady, OmaId::EnrollDevice::EnrollError => e

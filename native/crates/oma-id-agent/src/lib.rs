@@ -395,13 +395,23 @@ pub fn bootstrap_checkin_until_accepted(
 }
 
 /// Apply bootstrap: provision the local account (§8.4) and set the local
-/// password. Precedence (§10: local, never synced):
-///   1. the operator-set install password staged at /etc/oma-id/install-password
-///      (written by the installer, deleted after use), OR
-///   2. the server's one-time bootstrap credential (fallback).
+/// password. The account's attributes (name, uid, home, shell, full_name)
+/// come from the server's POSIX mapping. Precedence for the password
+/// (§10: applied locally, never synced):
+///   1. the server-attributed one-time bootstrap credential (issued at
+///      acceptance, delivered on the activating check-in), OR
+///   2. the operator-set install password staged at /etc/oma-id/
+///      install-password (written by the installer, deleted after use).
 pub fn apply_bootstrap(bootstrapped: &Bootstrapped) -> Result<(), AgentError> {
     crate::provisioning::ensure_local_account(&bootstrapped.posix)
         .map_err(|e| AgentError::Message(format!("provision account: {e}")))?;
+
+    if let Some(credential) = &bootstrapped.bootstrap_credential {
+        crate::provisioning::set_local_password(&bootstrapped.posix.username, credential)
+            .map_err(|e| AgentError::Message(format!("set server-attributed password: {e}")))?;
+        eprintln!("oma-id-agent: local password set (server-attributed bootstrap); user rotates at first login");
+        return Ok(());
+    }
 
     let staged = std::fs::read_to_string("/etc/oma-id/install-password").ok();
     if let Some(password) = staged {
@@ -411,10 +421,6 @@ pub fn apply_bootstrap(bootstrapped: &Bootstrapped) -> Result<(), AgentError> {
         std::fs::remove_file("/etc/oma-id/install-password")
             .map_err(|e| AgentError::Message(format!("delete staged install password: {e}")))?;
         eprintln!("oma-id-agent: local password set from the install-set password (staged value deleted)");
-    } else if let Some(credential) = &bootstrapped.bootstrap_credential {
-        crate::provisioning::set_local_password(&bootstrapped.posix.username, credential)
-            .map_err(|e| AgentError::Message(format!("set bootstrap password: {e}")))?;
-        eprintln!("oma-id-agent: local password set (bootstrap); user must rotate at first login");
     }
     Ok(())
 }

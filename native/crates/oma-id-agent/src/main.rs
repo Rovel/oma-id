@@ -44,7 +44,7 @@ fn main() -> std::process::ExitCode {
         // account + set the one-time bootstrap password, ack first boot, then
         // continue into the normal daemon loop. Bounded retry/backoff; no
         // first-boot dead-end at a pending acceptance.
-        Some("bootstrap") => match bootstrap_and_run(args.get(1)) {
+        Some("bootstrap") => match bootstrap_and_run() {
             Ok(()) => std::process::ExitCode::SUCCESS,
             Err(error) => {
                 eprintln!("oma-id-agent: {error}");
@@ -169,7 +169,7 @@ fn enr_status_runner() -> Result<(), AgentError> {
 
 /// Reserve-then-activate bootstrap, then fall through to the daemon run
 /// (which reloads the config and does an ordinary check-in/provisioning).
-fn bootstrap_and_run(args: Option<&String>) -> Result<(), AgentError> {
+fn bootstrap_and_run() -> Result<(), AgentError> {
     let config_path = std::env::args().skip_while(|a| a != "--config").nth(1)
         .ok_or_else(|| AgentError::Message("bootstrap requires --config <path>".into()))?;
     let config = AgentConfig::load(Path::new(&config_path))?;
@@ -188,8 +188,8 @@ fn bootstrap_and_run(args: Option<&String>) -> Result<(), AgentError> {
     );
     apply_bootstrap(&bootstrapped)?;
     post_first_boot_ack(&config.server_url, &config.device_id, &identity)?;
-    eprintln!("oma-id-agent: first-boot bootstrap complete — starting daemon");
-    run(args)
+    eprintln!("oma-id-agent: first-boot bootstrap complete — exiting; the first-boot unit enables + starts the daemon");
+    Ok(())
 }
 
 fn run(args: Option<&String>) -> Result<(), AgentError> {

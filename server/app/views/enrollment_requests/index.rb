@@ -210,6 +210,8 @@ module Views
           end
           input(type: "text", name: "device_id", value: request.requested_device_id || "",
                 placeholder: "device id", required: true, class: "oma-input")
+          input(type: "password", name: "initial_password", autocomplete: "new-password",
+                placeholder: "first-login password (blank = generated)", class: "oma-input")
           render RubyUI::Button.new(type: "submit", class: "oma-accept") { "Accept" }
         end
       end

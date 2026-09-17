@@ -73,12 +73,19 @@ class EnrollmentRequest < ApplicationRecord
   # §7.2 steps 3-4: administrative approval, bound to the transaction, the
   # device public key, the assigned identity, and — enforced before the
   # flip — a verified key-possession proof.
-  def accept!(person:, device_id:, actor:)
+  # initial_password: the administrator MAY set the person's first-login
+  # credential at acceptance. It is delivered ONCE in the activating check-in
+  # (single-use, filtered from logs, nulled on delivery) and rotated by the
+  # user at first login (§10: the long-term password is set locally). When
+  # blank, the server generates it.
+  def accept!(person:, device_id:, actor:, initial_password: nil)
     raise NotReady, "key possession not verified yet" unless key_possession_verified?
     raise NotReady, "already #{state}" unless pending?
 
     self.transaction do
       device = OmaId::EnrollDevice.call!(person:, device_id:, public_key_hex:)
+      bootstrap = initial_password.presence || SecureRandom.base58(16)
+      device.update!(bootstrap_credential: bootstrap)
       update!(state: "accepted", person:, device:)
       AuditEvent.record!(
         actor: actor, action: "enrollment.accept", target: "enrollment_request:#{id}",
