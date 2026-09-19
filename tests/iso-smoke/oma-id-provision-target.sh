@@ -197,6 +197,8 @@ if [[ -z "$mapping_username" ]]; then
 fi
 printf '{"posix_username": "%s", "device_id": "%s"}\n' "$mapping_username" "$device_id" \
   > "$root/etc/oma-id/provision-output.json" 2>/dev/null || true
+# The login phase (configure_oma_login) reads the provisioned username from here.
+printf '%s\n' "$mapping_username" > "$root/etc/oma-id/login-username" 2>/dev/null || true
 
 echo "oma-id-provision-target: staged agent+module+unit+config into $root (server: $server_url, proposed device: $device_id)"
 echo "oma-id-provision-target: first boot will self-enroll; an administrator must accept the device."
