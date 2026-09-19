@@ -165,17 +165,38 @@ ln -sfn /usr/lib/systemd/system/oma-id-first-boot.service \
 
 # §8.2 PAM wiring: auth + account through pam_oma_id. The same wiring the
 # live ISO layer applies, applied to the target AFTER the omarchy install.
+# §8.2 PAM wiring: insert pam_oma_id as SUFFICIENT before the stack's
+# pam_unix line — managed accounts authenticate through the agent (lease +
+# local credential), local/rescue accounts fall through to local auth.
+# Appending at the stack's end is WRONG on quattro: omarchy-apply-lock ends
+# the auth section with `auth [default=die] pam_faillock.so authsucc`, so
+# appended lines are unreachable (and the lock would deny everything).
 for service in sddm omarchy-lock-password omarchy-lock-fingerprint; do
   pam="$root/etc/pam.d/$service"
   if [[ ! -f "$pam" ]]; then
-    # The omarchy install may not ship a lock-PAM file on every DE — create
-    # it (same content the live layer uses) rather than failing the stage.
     install -d -m 0755 "$root/etc/pam.d"
-    printf '# OMA-ID managed login (created by oma-id-provision-target)\nauth        required    pam_oma_id.so\naccount     required    pam_oma_id.so\n' >"$pam"
+    printf '# OMA-ID managed login (created by oma-id-provision-target)\nauth        sufficient   pam_oma_id.so\naccount     required     pam_oma_id.so\n' >"$pam"
   elif ! grep -q "pam_oma_id.so" "$pam"; then
-    printf '# OMA-ID managed login (added by oma-id-provision-target)\nauth        required    pam_oma_id.so\naccount     required    pam_oma_id.so\n' >>"$pam"
+    awk '
+      /^[[:space:]]*-?auth[[:space:]].*pam_unix\.so/ && !inserted {
+        print "auth        sufficient   pam_oma_id.so"
+        print "account     required     pam_oma_id.so"
+        inserted=1
+      }
+      { print }
+    ' "$pam" > "$pam.oma-new" && mv "$pam.oma-new" "$pam"
+    grep -q "pam_oma_id.so" "$pam" || printf '# OMA-ID managed login\nauth        sufficient   pam_oma_id.so\naccount     required     pam_oma_id.so\n' >>"$pam"
+    echo "oma-id-provision-target: inserted pam_oma_id before pam_unix in $pam"
   fi
 done
+
+# The provisioned username (§8.4 mapping) for the orchestrator's login phase.
+mapping_username=$(jq -r '.username // empty' "$root/var/lib/oma-id/posix-mapping.json" 2>/dev/null || true)
+if [[ -z "$mapping_username" ]]; then
+  mapping_username=$(getent passwd | awk -F: '$3 >= 10000 && $3 < 20000 {print $1; exit}' 2>/dev/null || true)
+fi
+printf '{"posix_username": "%s", "device_id": "%s"}\n' "$mapping_username" "$device_id" \
+  > "$root/etc/oma-id/provision-output.json" 2>/dev/null || true
 
 echo "oma-id-provision-target: staged agent+module+unit+config into $root (server: $server_url, proposed device: $device_id)"
 echo "oma-id-provision-target: first boot will self-enroll; an administrator must accept the device."
