@@ -410,18 +410,40 @@ pub fn apply_bootstrap(bootstrapped: &Bootstrapped) -> Result<(), AgentError> {
         crate::provisioning::set_local_password(&bootstrapped.posix.username, credential)
             .map_err(|e| AgentError::Message(format!("set server-attributed password: {e}")))?;
         eprintln!("oma-id-agent: local password set (server-attributed bootstrap); user rotates at first login");
-        return Ok(());
+    } else {
+        let staged = std::fs::read_to_string("/etc/oma-id/install-password").ok();
+        if let Some(password) = staged {
+            let password = password.trim_end();
+            crate::provisioning::set_local_password(&bootstrapped.posix.username, password)
+                .map_err(|e| AgentError::Message(format!("set install password: {e}")))?;
+            std::fs::remove_file("/etc/oma-id/install-password")
+                .map_err(|e| AgentError::Message(format!("delete staged install password: {e}")))?;
+            eprintln!("oma-id-agent: local password set from the install-set password (staged value deleted)");
+        }
     }
 
-    let staged = std::fs::read_to_string("/etc/oma-id/install-password").ok();
-    if let Some(password) = staged {
-        let password = password.trim_end();
-        crate::provisioning::set_local_password(&bootstrapped.posix.username, password)
-            .map_err(|e| AgentError::Message(format!("set install password: {e}")))?;
-        std::fs::remove_file("/etc/oma-id/install-password")
-            .map_err(|e| AgentError::Message(format!("delete staged install password: {e}")))?;
-        eprintln!("oma-id-agent: local password set from the install-set password (staged value deleted)");
-    }
+    // Managed login surface (docs/p0/installer-enrollment.md): the machine
+    // boots to SDDM and logs in with the server-attributed account — quattro
+    // wrote a localadmin AUTOLOGIN for encrypted installs, which would trap
+    // the operator in a session the lock PAM denies. Remove it and set SDDM's
+    // last user to the provisioned account.
+    let _ = std::fs::write(
+        "/etc/oma-id/login-username",
+        format!("{}\n", bootstrapped.posix.username),
+    );
+    let _ = std::fs::remove_file("/etc/sddm.conf.d/autologin.conf");
+    let state_conf = "/var/lib/sddm/state.conf";
+    let _ = std::fs::write(
+        state_conf,
+        format!("[Last]\nSession=omarchy.desktop\nUser={}\n", bootstrapped.posix.username),
+    );
+    let _ = std::process::Command::new("chown")
+        .args(["sddm:sddm", "/var/lib/sddm", state_conf])
+        .output();
+    eprintln!(
+        "oma-id-agent: SDDM login set to the provisioned account ({})",
+        bootstrapped.posix.username
+    );
     Ok(())
 }
 
