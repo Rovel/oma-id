@@ -398,28 +398,30 @@ pub fn bootstrap_checkin_until_accepted(
 /// password. The account's attributes (name, uid, home, shell, full_name)
 /// come from the server's POSIX mapping. Precedence for the password
 /// (§10: applied locally, never synced):
-///   1. the server-attributed one-time bootstrap credential (issued at
-///      acceptance, delivered on the activating check-in), OR
-///   2. the operator-set install password staged at /etc/oma-id/
-///      install-password (written by the installer, deleted after use).
+///   1. the operator-set install password staged at /etc/oma-id/
+///      install-password (written by the installer, deleted after use) —
+///      the ONE password the operator knows, OR
+///   2. the server-issued one-time bootstrap credential (only when the
+///      admin explicitly set one at acceptance) — shown once, rotated at
+///      first login.
 pub fn apply_bootstrap(bootstrapped: &Bootstrapped) -> Result<(), AgentError> {
     crate::provisioning::ensure_local_account(&bootstrapped.posix)
         .map_err(|e| AgentError::Message(format!("provision account: {e}")))?;
 
-    if let Some(credential) = &bootstrapped.bootstrap_credential {
+    let staged = std::fs::read_to_string("/etc/oma-id/install-password")
+        .ok()
+        .map(|p| p.trim_end().to_string())
+        .filter(|p| !p.is_empty());
+    if let Some(password) = staged {
+        crate::provisioning::set_local_password(&bootstrapped.posix.username, &password)
+            .map_err(|e| AgentError::Message(format!("set install password: {e}")))?;
+        std::fs::remove_file("/etc/oma-id/install-password")
+            .map_err(|e| AgentError::Message(format!("delete staged install password: {e}")))?;
+        eprintln!("oma-id-agent: local password set from the install password (staged value deleted)");
+    } else if let Some(credential) = &bootstrapped.bootstrap_credential {
         crate::provisioning::set_local_password(&bootstrapped.posix.username, credential)
-            .map_err(|e| AgentError::Message(format!("set server-attributed password: {e}")))?;
-        eprintln!("oma-id-agent: local password set (server-attributed bootstrap); user rotates at first login");
-    } else {
-        let staged = std::fs::read_to_string("/etc/oma-id/install-password").ok();
-        if let Some(password) = staged {
-            let password = password.trim_end();
-            crate::provisioning::set_local_password(&bootstrapped.posix.username, password)
-                .map_err(|e| AgentError::Message(format!("set install password: {e}")))?;
-            std::fs::remove_file("/etc/oma-id/install-password")
-                .map_err(|e| AgentError::Message(format!("delete staged install password: {e}")))?;
-            eprintln!("oma-id-agent: local password set from the install-set password (staged value deleted)");
-        }
+            .map_err(|e| AgentError::Message(format!("set bootstrap password: {e}")))?;
+        eprintln!("oma-id-agent: local password set (admin-issued bootstrap); user rotates at first login");
     }
 
     // Managed login surface (docs/p0/installer-enrollment.md): the machine
