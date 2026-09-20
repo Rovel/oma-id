@@ -102,6 +102,13 @@ fi
 install -D -m 0600 "$key_src" "$root/var/lib/oma-id/device.key"
 echo "oma-id-provision-target: staged device key (pubkey registered at enrollment)"
 
+# The provisioned account's shell must be in /etc/shells or pam_shells denies
+# every login (observed: owner with /bin/zsh denied at SDDM).
+if ! grep -qx "/bin/zsh" "$root/etc/shells" 2>/dev/null; then
+  printf '/bin/zsh\n' >> "$root/etc/shells"
+  echo "oma-id-provision-target: added /bin/zsh to the target /etc/shells"
+fi
+
 # Config: the §6.2-validated server URL (device_id is the agent's PROPOSED
 # id — the administrator sees and can rename it at acceptance). State lives
 # in /var/lib/oma-id (persistent on the installed system).

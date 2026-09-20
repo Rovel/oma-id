@@ -427,19 +427,31 @@ pub fn apply_bootstrap(bootstrapped: &Bootstrapped) -> Result<(), AgentError> {
     // wrote a localadmin AUTOLOGIN for encrypted installs, which would trap
     // the operator in a session the lock PAM denies. Remove it and set SDDM's
     // last user to the provisioned account.
-    let _ = std::fs::write(
+    if let Err(e) = std::fs::write(
         "/etc/oma-id/login-username",
         format!("{}\n", bootstrapped.posix.username),
-    );
-    let _ = std::fs::remove_file("/etc/sddm.conf.d/autologin.conf");
+    ) {
+        eprintln!("oma-id-agent: login-username write failed: {e}");
+    }
+    if let Err(e) = std::fs::remove_file("/etc/sddm.conf.d/autologin.conf") {
+        if e.kind() != std::io::ErrorKind::NotFound {
+            eprintln!("oma-id-agent: autologin removal FAILED (the rescue session would trap the login): {e}");
+        }
+    }
     let state_conf = "/var/lib/sddm/state.conf";
-    let _ = std::fs::write(
+    if let Err(e) = std::fs::write(
         state_conf,
         format!("[Last]\nSession=omarchy.desktop\nUser={}\n", bootstrapped.posix.username),
-    );
-    let _ = std::process::Command::new("chown")
-        .args(["sddm:sddm", "/var/lib/sddm", state_conf])
-        .output();
+    ) {
+        eprintln!("oma-id-agent: SDDM state.conf write failed: {e}");
+    } else {
+        let chown = std::process::Command::new("chown")
+            .args(["sddm:sddm", "/var/lib/sddm", state_conf])
+            .output();
+        if let Err(e) = chown {
+            eprintln!("oma-id-agent: SDDM state.conf chown failed: {e}");
+        }
+    }
     eprintln!(
         "oma-id-agent: SDDM login set to the provisioned account ({})",
         bootstrapped.posix.username

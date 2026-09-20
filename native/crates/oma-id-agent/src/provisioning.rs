@@ -121,6 +121,19 @@ pub fn ensure_local_account(mapping: &PosixMapping) -> Result<(), ProvisionError
 
     ensure_group(mapping.gid, &mapping.username)?;
 
+    // pam_shells gates login against /etc/shells — the provisioned shell must
+    // be listed or every login for this account is denied.
+    let shells = std::fs::read_to_string("/etc/shells").unwrap_or_default();
+    if !shells.lines().any(|l| l.trim() == mapping.shell) {
+        use std::io::Write as _;
+        let mut f = std::fs::OpenOptions::new()
+            .append(true)
+            .create(true)
+            .open("/etc/shells")
+            .map_err(ProvisionError::Io)?;
+        writeln!(f, "{}", mapping.shell).map_err(ProvisionError::Io)?;
+    }
+
     let status = Command::new("useradd")
         .arg("--uid")
         .arg(mapping.uid.to_string())
