@@ -65,6 +65,21 @@ pub enum Stage {
     Account,
 }
 
+// Linux-PAM resolves `pam_sm_setcred` when a session manager (SDDM, in the
+// §8.2 wiring) establishes or refreshes credentials. The module keeps no
+// per-session credentials (the lease lives with the agent), so this stage is
+// a declared no-op returning success. Without the export, libpam logs
+// "unable to resolve symbol: pam_sm_setcred" on every session open.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pam_sm_setcred(
+    _handle: PamHandle,
+    _flags: c_int,
+    _argc: c_int,
+    _argv: *const *const c_char,
+) -> c_int {
+    PAM_SUCCESS
+}
+
 // Linux-PAM resolves the auth-stage entry point as `pam_sm_authenticate`
 // (pam_handlers.c), not `pam_sm_auth` — exporting the wrong name makes
 // libpam return PAM_MODULE_UNKNOWN without ever calling us.
