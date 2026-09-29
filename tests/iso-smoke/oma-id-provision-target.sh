@@ -29,7 +29,7 @@ install -d -m 0755 "$root/var/log"
 exec > >(tee -a /var/log/omarchy-install.log "$root/var/log/oma-id-provision-install.log" >/dev/null) 2>&1 || true
 server_url="${2:-}"
 device_id="${3:-workstation-1}"
-choice_file=/run/oma-id/standin-choice.json
+choice_file=/run/oma-id-install/standin-choice.json
 
 # --- gate (§6.4 / ADR-006): only an explicit work-school choice provisions ---
 # The /run copy is tmpfs and can vanish (mid-install reboot/cleanup); the
@@ -52,7 +52,7 @@ if [[ "$mode" != "work-school" ]]; then
     head -c 300 "$choice_file" | sed 's/^/  /'
   else
     echo "oma-id-provision-target: choice file MISSING at $choice_file"
-    ls -la /run/oma-id 2>&1 | sed 's/^/  /' || true
+    ls -la /run/oma-id-install 2>&1 | sed 's/^/  /' || true
   fi
   exit 0
 fi
@@ -101,6 +101,12 @@ if [[ ! -s "$key_src" ]]; then
 fi
 install -D -m 0600 "$key_src" "$root/var/lib/oma-id/device.key"
 echo "oma-id-provision-target: staged device key (pubkey registered at enrollment)"
+# Anarchy's single install-set password: stage it inside LUKS for the agent
+# to apply to the OMA-ID account locally, then delete after use.
+if [[ -s /run/oma-id-install/install-password ]]; then
+  install -D -m 0600 /run/oma-id-install/install-password "$root/etc/oma-id/install-password"
+  echo "oma-id-provision-target: staged the local install password (0600, inside LUKS)"
+fi
 
 # The provisioned account's shell must be in /etc/shells or pam_shells denies
 # every login (observed: owner with /bin/zsh denied at SDDM).
@@ -146,9 +152,19 @@ fi
 /usr/bin/oma-id-agent bootstrap --config /etc/oma-id-agent.json
 touch "$MARKER"
 echo "[$(date -u +%FT%TZ)] oma-id bootstrap complete — enabling + starting daemon"
+user=$(cat /etc/oma-id/login-username 2>/dev/null || true)
+if [[ -n "$user" && -x /usr/share/anarchy/install/anarchy-apply-user.sh ]]; then
+  /usr/share/anarchy/install/anarchy-apply-user.sh "$user"
+fi
 systemctl enable --now oma-id-agent.service
 SCRIPT
 chmod 0755 "$root/usr/libexec/oma-id/first-boot.sh"
+# The minimal Anarchy desktop finalizer (installed in the live root by the
+# ISO builder) is staged into the target for the bootstrap's per-user setup.
+if [[ -x /usr/share/anarchy/install/anarchy-apply-user.sh ]]; then
+  install -D -m 0755 /usr/share/anarchy/install/anarchy-apply-user.sh \
+    "$root/usr/share/anarchy/install/anarchy-apply-user.sh"
+fi
 
 install -d -m 0755 "$root/usr/lib/systemd/system"
 cat >"$root/usr/lib/systemd/system/oma-id-first-boot.service" <<UNIT
