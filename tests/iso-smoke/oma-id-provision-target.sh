@@ -165,6 +165,19 @@ if [[ -x /usr/share/anarchy/install/anarchy-apply-user.sh ]]; then
   install -D -m 0755 /usr/share/anarchy/install/anarchy-apply-user.sh \
     "$root/usr/share/anarchy/install/anarchy-apply-user.sh"
 fi
+# The Anarchy theme engine must reach the target as well: anarchy-apply-user
+# calls anarchy-theme-set at first boot, so a target without it would fail
+# the first-boot sequencing before the daemon is enabled. Stage the runtime
+# tree (themes + templates) and the theme commands from the live environment
+# — the same files the ISO builder installs at their system paths.
+if [[ -d /usr/share/anarchy/themes && -d /usr/share/anarchy/default/themed ]]; then
+  mkdir -p "$root/usr/share/anarchy" "$root/usr/bin"
+  cp -a /usr/share/anarchy/themes "$root/usr/share/anarchy/themes"
+  cp -a /usr/share/anarchy/default "$root/usr/share/anarchy/default"
+  for cmd in /usr/bin/anarchy-theme-*; do
+    install -m 0755 "$cmd" "$root/usr/bin/${cmd##*/}"
+  done
+fi
 
 install -d -m 0755 "$root/usr/lib/systemd/system"
 cat >"$root/usr/lib/systemd/system/oma-id-first-boot.service" <<UNIT
